@@ -1,8 +1,7 @@
-
-
 //                                     ===================================  FUNCTION DECLARATIONS ===================================
 
 void sendTelemetry();
+void sampleData();
 
 
 
@@ -30,49 +29,78 @@ void loop() {
 
 
 
+
+
+
 }
+
+
+
+
+//                                           ===================================  SAMPLE DATA  ===================================
+
+sampleData() {
+
+
+
+
+
+//                                                                ---------------- Pointers ----------------
+
+int teamID = 1093;
+unsigned long missionTime;
+int packetCount;
+int determinedMode = currentMode ? 0 : 1;
+string mode[2] = { "F", "S"}
+
+
+
+
+}
+
+
 
 
 //                                           ===================================  SEND TELEMETRY  ===================================
 
 sendTelemetry() {
 
+  //                                                            ---------------- Telemetry Pointers ----------------
 
-  
+  int *pTeam_ID = &teamID;
+  unsigned long *pMission_time = &missionTime;
+  int *pPacket_count = &packetCount;
+  int *pDetermined_Mode = &determinedMode;
+  string *pMode = mode[determinedMode];
 
 
 
-  Serial.print(TeamID); Serial.print(",");
-  Serial.print(TeamID); Serial.print(",");
+
+
+
+  Serial.print(*pTeam_ID); Serial.print(",");
+  Serial.print(*pMission_time); Serial.print(",");
+  Serial.print(packet_count); Serial.print(",");
+  Serial.print(mode); Serial.print(",");
   Serial.print(stateNames[flightState]); Serial.print(",");
   Serial.print(altitude, 2); Serial.print(",");
   Serial.print(temperature, 1); Serial.print(",");
-  Serial.print(velocity, 2); Serial.print(",");
-  Serial.print(acceleration_x, 2); Serial.print(",");
-  Serial.print(acceleration_y, 2); Serial.print(",");
-  Serial.print(acceleration_z, 2); Serial.print(",");
-  Serial.print(compassHeading); Serial.print(",");
-  Serial.print(gpsLatitude, 5); Serial.print(",");
-  Serial.print(gpsLongitude, 5); Serial.print(",");
-  Serial.print(batteryVoltage, 2); Serial.print(",");
-  Serial.print(gyroRoll, 1); Serial.print(",");
-  Serial.print(gyroPitch, 1); Serial.print(",");
-  Serial.print(gyroYaw, 1); Serial.print(",");
-  Serial.print(flightTime); Serial.print(",,");
-  Serial.print(gpsSatellites); Serial.print(",");
-  Serial.print(aerobrakeOverride ? "MANUAL" : "AUTO"); Serial.print(",");
-  Serial.print(aerobrakeDeployed ? "DEPLOYED" : "RETRACTED"); Serial.print(",");
-  Serial.print(getFlightLedCode()); Serial.print(",");
-  Serial.print(pressurePa, 1); Serial.print(",");
-  Serial.print(initialVelocity, 1); Serial.print(",");
-  Serial.print(acceleration_highest, 2); Serial.print(",");
-  Serial.print(peakAltitude, 2); Serial.println();
-
-
-
-
-
-
+  Serial.print(pressure_kPa, 1); Serial.print(",");
+  Serial.print(battery_Voltage, 2); Serial.print(",");
+  Serial.print(current, 2); Serial.print(",");
+  Serial.print(gyro_Roll, 1); Serial.print(",");
+  Serial.print(gyro_Pitch, 1); Serial.print(",");
+  Serial.print(gyro_Yaw, 1); Serial.print(",");
+  Serial.print(acceleration_roll, 2); Serial.print(",");
+  Serial.print(acceleration_pitch, 2); Serial.print(",");
+  Serial.print(acceleration_yaw, 2); Serial.print(",");
+  Serial.print(gps_time); Serial.print(",");
+  Serial.print(gps_altitude); Serial.print(",");
+  Serial.print(gps_latitude, 5); Serial.print(",");
+  Serial.print(gps_longitude, 5); Serial.print(",");
+  Serial.print(gps_satellites); Serial.print(",");
+  Serial.print(cmd_echo); Serial.print(",,");
+  Serial.print(velocity); Serial.println();
 
 
 
