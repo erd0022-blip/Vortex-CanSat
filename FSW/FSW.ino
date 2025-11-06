@@ -1,86 +1,98 @@
-//                                     ===================================  FUNCTION DECLARATIONS ===================================
 
+//                                     ===================================  FUNCTION DECLARATIONS ===================================
 void sendTelemetry();
 void sampleData();
+void UpdateFlightState();
 
+enum FlightState { 
+  LAUNCHPAD, 
+  ASCENT, 
+  APOGEE, 
+  DESCENT, 
+  PAYLOAD_RELEASED, 
+  PROBE_RELEASED,
+  LANDED 
+  };
 
-
-
-
+FlightState flightState = LAUNCHPAD;
+const char* stateNames[] = {
+  "LAUNCHPAD", 
+  "ASCENT", 
+  "APOGEE", 
+  "DESCENT", 
+  "PAYLOAD_RELEASED", 
+  "PROBE_RELEASED",
+  "LANDED"
+  };
 
 //                                           ===================================  TIMERS  ===================================
 
-
-
-
-
-
-
-
-
+//                                           ===================================  VOID SETUP  ===================================
 void setup() {
-
+Serial.begin(115200);
 
 
 
 }
-
+//                                           ===================================  VOID LOOP  ===================================
 void loop() {
 
 
-
-
-
-
 }
-
-
-
 
 //                                           ===================================  SAMPLE DATA  ===================================
+void sampleData(unsigned long& missionTime, int& packetCount, int& determinedMode, String& mode, 
+                float& altitude, float& temperature, float& pressure_kpa, float& battery_voltage, float& current, float& gyro_Roll, float& gyro_Pitch,
+                float& gyro_Yaw, float& acceleration_roll, float& acceleration_pitch, float& acceleration_yaw, float& gps_time, float& gps_altitude, float& gps_latitude, float& gps_longitude, 
+                int& gps_satellites, String& cmd_echo, float& velocity) {
 
-sampleData() {
 
 
 
 
-
-//                                                                ---------------- Pointers ----------------
-
-int teamID = 1093;
-unsigned long missionTime;
-int packetCount;
-int determinedMode = currentMode ? 0 : 1;
-string mode[2] = { "F", "S"}
+missionTime;
+packetCount;
+mode = determinedMode ? "F" : "S";
 
 
 
 
 }
 
+//                                           ===================================  FLIGHT STATE  ===================================
+void UpdateFlightState(FlightState& flightState) {
+  switch(flightState) {
+    //LaunchPad
+  case LAUNCHPAD
+    if (acceleration > 20 ) {
+      flightState = ASCENT
+    }
+    break;
+  case ASCENT 
+      if (apogeeDetected) {
+        flightState = APOGEE;
+    } else if (velocity > -0.5 && velocity < 0.5 && altitude > 1400) {
+        flightState = APOGEE;
+      } 
+    break;
+  case APOGEE
+    if ()
 
-
+  }
+}
 
 //                                           ===================================  SEND TELEMETRY  ===================================
 
-sendTelemetry() {
+void sendTelemetry(unsigned long missionTime, int packetCount, int determinedMode, String mode, 
+                   FlightState flightState, float altitude, float temperature, float pressure_kpa, float battery_voltage, float current, float gyro_Roll, float gyro_Pitch,
+                   float gyro_Yaw, float acceleration_roll, float acceleration_pitch, float acceleration_yaw, float gps_time, float gps_altitude, float gps_latitude, float gps_longitude, 
+                   int gps_satellites, String cmd_echo, float velocity) {
 
-  //                                                            ---------------- Telemetry Pointers ----------------
+int teamID = 1093;
 
-  int *pTeam_ID = &teamID;
-  unsigned long *pMission_time = &missionTime;
-  int *pPacket_count = &packetCount;
-  int *pDetermined_Mode = &determinedMode;
-  string *pMode = mode[determinedMode];
-
-
-
-
-
-
-  Serial.print(*pTeam_ID); Serial.print(",");
-  Serial.print(*pMission_time); Serial.print(",");
-  Serial.print(packet_count); Serial.print(",");
+  Serial.print(teamID); Serial.print(",");
+  Serial.print(missionTime); Serial.print(",");
+  Serial.print(packetCount); Serial.print(",");
   Serial.print(mode); Serial.print(",");
   Serial.print(stateNames[flightState]); Serial.print(",");
   Serial.print(altitude, 2); Serial.print(",");
@@ -101,10 +113,6 @@ sendTelemetry() {
   Serial.print(gps_satellites); Serial.print(",");
   Serial.print(cmd_echo); Serial.print(",,");
   Serial.print(velocity); Serial.println();
-
-
-
-
 }
 
 
