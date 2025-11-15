@@ -4,6 +4,9 @@
 #include <math.h>
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BMP3XX.h"
+#include <Servo.h>
+
+
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  FLIGHT DATA STRUCT  ===================================
@@ -23,6 +26,15 @@ float gps_altitude;
 float gps_latitude;
 float gps_longitude; 
 int gps_satellites;
+float gps_lat_land;
+float gps_long_land;
+float new_gps_lat;
+float new_gps_long;
+float future_gps_lat;
+float future_gps_long;
+float main_gps_vector;
+float future_gps_vector;
+
 //                    -------- MODE --------
 bool determinedMode;
 String mode;
@@ -35,6 +47,8 @@ int sdCardTimeInterval;
 unsigned long currentTime;
 float deltaTime;
 unsigned long lastTime;
+unsigned long newGPSTime;
+unsigned long prevGPSTime;
 //                    -------- TELEMETRY --------
 int packetCount;
 //                    -------- BATTERY --------
@@ -52,9 +66,6 @@ bool manualParaglider = false;
 bool eepromMode = false;
 bool eepromWipe = false;
 String cmd_echo;
-//                    -------- MECHANISMS --------
-bool paragliderRelease = false;
-bool dropEgg = false;
 //                    -------- Altitude --------
 float altitude;
 float altitudeRaw;
@@ -75,16 +86,20 @@ bool apogeeDetected = false;
 int sampleCount = 0;
 int altIndex;
 float altitudeSamples[6];
-static const int BUFFER_SIZE = 6;
+static const int ALT_BUFF = 6;
 float apogeeHeight;
 
-//                    -------- BASE pRESSURE CALIBRATION --------
+//                    -------- BASE PRESSURE CALIBRATION --------
 unsigned long startTime;
 int samplesTaken = 0;
 float sum = 0;
 int validCount = 0;
 float tempPressurePA;
 float basePressurePA;
+//                    -------- AUTONOMOUS --------
+int direction;
+float servoOutput;
+
 };
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  GLOBALS ===================================
@@ -93,6 +108,7 @@ void commandChecker(FlightData &fd);
 void sendTelemetry(FlightData &fd);
 void sampleData(FlightData &fd);
 void UpdateFlightState(FlightData &fd);
+void autonomousControls(FlightData &fd);
 
 //           ---- Struct Variable ----
 FlightData fd;
@@ -155,6 +171,8 @@ if (!bmp.begin_I2C()) {
 
   fd.basePressurePA = (fd.validCount > 0) ? fd.sum / fd.validCount : 101325.0;
 
+//      --------- Timers ---------
+fd.prevGPSTime = 0;
 
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -168,6 +186,25 @@ sampleData(fd);
 apogeeDetection(fd);
 
 UpdateFlightState(fd);
+
+if (flightState = PROBE_RELEASE){
+  autonomousControls(fd);
+  switch(fd.direction) {
+    case 1: // LEFT
+      Serial.print("Left");
+     // myservo.writeMicroseconds(fd.servoOutput);
+      break;
+    case 2: // RIGHT
+      Serial.print("Right");
+     // myservo.writemicroseconds(fd.servoOutput);
+      break;
+    case 3: // STAY STRAIGHT
+      Serial.print("Stay Straight");
+     // myservo.writeMicroseconds(fd.servoOutput);
+      break;
+  }
+}
+
 
 if (fd.telemetryStatus){
   if((millis() - fd.telemetryTime) > fd.telemetryInterval){
@@ -225,16 +262,16 @@ void apogeeDetection(FlightData &fd){
     float newAltitude = fd.altitude;
     // store in buffer
     fd.altitudeSamples[fd.altIndex] = newAltitude;
-    fd.altIndex = (fd.altIndex + 1) % fd.BUFFER_SIZE;
+    fd.altIndex = (fd.altIndex + 1) % fd.ALT_BUFF;
     // Increment sample count until buffer is full
-    if (fd.sampleCount < fd.BUFFER_SIZE) fd.sampleCount++;
+    if (fd.sampleCount < fd.ALT_BUFF) fd.sampleCount++;
     // only check for apogee if the buffer is full
-    if (fd.sampleCount < fd.BUFFER_SIZE) return;
+    if (fd.sampleCount < fd.ALT_BUFF) return;
     // get recent and past readings
-    float secondPast = fd.altitudeSamples[(fd.altIndex + fd.BUFFER_SIZE - 3) % fd.BUFFER_SIZE] ;
-    float firstPast = fd.altitudeSamples[(fd.altIndex + fd.BUFFER_SIZE - 2) % fd.BUFFER_SIZE];
+    float secondPast = fd.altitudeSamples[(fd.altIndex + fd.ALT_BUFF - 3) % fd.ALT_BUFF] ;
+    float firstPast = fd.altitudeSamples[(fd.altIndex + fd.ALT_BUFF - 2) % fd.ALT_BUFF];
     float avgPast = (firstPast + secondPast) / (2);
-    float recent = fd.altitudeSamples[(fd.altIndex + fd.BUFFER_SIZE - 1) % fd.BUFFER_SIZE];
+    float recent = fd.altitudeSamples[(fd.altIndex + fd.ALT_BUFF - 1) % fd.ALT_BUFF];
     // check if we are descending
     if ((avgPast - recent) > 1 || ((((avgPast - recent) / avgPast) * 100) > 0.1)) {
       fd.apogeeDetected = true;
@@ -267,13 +304,11 @@ void UpdateFlightState(FlightData &fd) {
   case DESCENT:
     if (fd.altitude <= (fd.apogeeHeight * 0.80)){
       flightState = PROBE_RELEASE;
-      fd.paragliderRelease = true;
     }
     break;
   case PROBE_RELEASE:
     if (fd.altitude <= 3.5){
       flightState = PAYLOAD_RELEASE;
-      fd.dropEgg = true;
     }
     break;
   case PAYLOAD_RELEASE:
@@ -334,6 +369,59 @@ void commandChecker(FlightData &fd){
 
 
 
+
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                           ===================================  AUTONOMOUS CONTROLS  ===================================
+void autonomousControls(FlightData &fd) {
+
+  float Cx = fd.gps_latitude;
+  float Cy = fd.gps_longitude;
+  float Nx = fd.new_gps_lat;
+  float Ny = fd.new_gps_long;
+  float Fx = fd.future_gps_lat;
+  float Fy = fd.future_gps_long;
+  float Lx = fd.gps_lat_land;
+  float Ly = fd.gps_long_land;
+  float Z_direction;
+  float In_min;
+  float In_max;
+  float Out_max;
+  float Out_min;
+
+
+  fd.newGPSTime = millis();
+  unsigned long deltaGPSTime = (fd.newGPSTime - fd.prevGPSTime);
+  // Velocity Function for Lat and Long
+  float velocityGPSLat = (Nx - Cx) / deltaGPSTime;
+  float velocityGPSLong = (Ny - Cy) / deltaGPSTime;
+  // This is the future positon formula to eventually gain a future vector line
+  Fx = Cx + (velocityGPSLat * 1000);
+  Fy = Cy + (velocityGPSLong * 1000);
+  // Vector Creation
+  float Ax =  Fx - Cx;
+  float Ay =  Fy - Cy;
+  float Bx =  Lx - Cx;
+  float By =  Ly - Cy;
+  float A_B = (Ax * Bx) + (Ay * By);
+  float A_abs = sqrt( (Ax * Ax) + (Ay * Ay) );
+  float B_abs = sqrt( (Bx * Bx) + (By * By) );
+  // The degree between the two Vectors formula
+  float degreeVector = acos((A_B)/(A_abs * B_abs));
+
+  // Mapping Range to Range formula to translate Angle input to Servo Output
+  fd.servoOutput = Out_min + ( ( (degreeVector - In_min) * (Out_max - Out_min) ) / ( In_max - In_min  )  );
+
+
+  // Used to determine which direction to Turn
+  Z_direction = (Ax * By) - (Ay * Bx);
+  if(Z_direction > 0.2) {
+    fd.direction = 1; // Turn Left
+  } else if(Z_direction < -0.2){
+    fd.direction = 2; // Turn Right
+  } else if(Z_direction >= -0.2 && Z_direction <= 0.2) {
+    fd.direction = 3; // Z value is apporximatley 0, so we'll stay straight.
+  }
 
 }
 
