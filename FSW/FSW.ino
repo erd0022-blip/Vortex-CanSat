@@ -1,3 +1,9 @@
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                           ===================================  LIBRARIES  ===================================
+#include <Wire.h>
+#include <math.h>
+#include <Adafruit_Sensor.h>
+#include "Adafruit_BMP3XX.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  FLIGHT DATA STRUCT  ===================================
@@ -92,13 +98,22 @@ const char* stateNames[7] = {
   "LANDED"
   };
  FlightState flightState = LAUNCHPAD;
+
+//      ------ Sensor Inits ------
+Adafruit_BMP3XX bmp;
+ // you can always do bmp(SDA_Pin,SCL_Pin) to set it to something specific rather than default
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  VOID SETUP  ===================================
 void setup() {
 Serial.begin(115200);
+Wire.begin();
 
 
-
+// Set up oversampling and filter initialization
+bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+bmp.setOutputDataRate(BMP3_ODR_50_HZ);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                              ===================================  VOID LOOP  ===================================
@@ -124,8 +139,13 @@ if (fd.telemetryStatus){
 //                                           ===================================  SAMPLE DATA  ===================================
 void sampleData(FlightData &fd) {
 
+//      ----BMP390 Sampling Code----
+// Pressure
+fd.pressure_kPa = (bmp.pressure / 1000);
+// Temperature
+fd.temperature = bmp.temperature;
 
-
+//      ----Mode Determiner Code----
 if(fd.simulationEnable && fd.simulationActivate) {
   fd.determinedMode = false;
 } else {
