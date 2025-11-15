@@ -32,6 +32,9 @@ unsigned long telemetryTime = 0;
 int telemetryInterval = 1000;
 unsigned long sdCardTime = 0;
 int sdCardTimeInterval;
+unsigned long currentTime;
+float deltaTime;
+unsigned long lastTime;
 //                    -------- TELEMETRY --------
 int packetCount;
 //                    -------- BATTERY --------
@@ -52,11 +55,19 @@ String cmd_echo;
 //                    -------- MECHANISMS --------
 bool paragliderRelease = false;
 bool dropEgg = false;
-//                    -------- MISC --------
+//                    -------- Altitude --------
 float altitude;
-float temperature; 
-float pressure_kPa;
+float altitudeRaw;
+float altitudeFiltered;
+float altitudeFilt;
+float alpha = 0.06;
+float deltaAltitude;
+float lastAltitude;
+//                    -------- Velocity --------
 float velocity;
+//                    -------- MISC --------
+float temperature; 
+float pressure_Pa;
 int teamID = 1093;
 
 //                    -------- APOGEE DETECTION FUNCTION --------
@@ -66,6 +77,14 @@ int altIndex;
 float altitudeSamples[6];
 static const int BUFFER_SIZE = 6;
 float apogeeHeight;
+
+//                    -------- BASE pRESSURE CALIBRATION --------
+unsigned long startTime;
+int samplesTaken = 0;
+float sum = 0;
+int validCount = 0;
+float tempPressurePA;
+float basePressurePA;
 };
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  GLOBALS ===================================
@@ -114,6 +133,29 @@ bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
 bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
 bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
 bmp.setOutputDataRate(BMP3_ODR_50_HZ);
+
+if (!bmp.begin_I2C()) {
+    Serial.println("BMP390 Not Initialized");
+}
+
+//      --------- Base Pressure Calibration ---------
+  fd.startTime = millis();
+
+  while(fd.samplesTaken < 12) {
+    if ((millis() - fd.startTime) >= 250) {
+      fd.tempPressurePA = bmp.pressure;
+      if (fd.tempPressurePA >= 95000.0 && fd.tempPressurePA <= 105000.0 ) {
+        fd.sum += fd.tempPressurePA;
+        fd.validCount++;
+      }
+      fd.samplesTaken++;
+      fd.startTime = millis();
+    }
+  }
+
+  fd.basePressurePA = (fd.validCount > 0) ? fd.sum / fd.validCount : 101325.0;
+
+
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                              ===================================  VOID LOOP  ===================================
@@ -138,12 +180,32 @@ if (fd.telemetryStatus){
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  SAMPLE DATA  ===================================
 void sampleData(FlightData &fd) {
-
+bmp.performReading();
 //      ----BMP390 Sampling Code----
 // Pressure
-fd.pressure_kPa = (bmp.pressure / 1000);
+fd.pressure_Pa = bmp.pressure;
 // Temperature
 fd.temperature = bmp.temperature;
+
+// Altitude
+fd.altitudeRaw = 44330 * (1 - pow((fd.pressure_Pa / fd.basePressurePA), 1.0 / 5.255));
+fd.altitudeFiltered = fd.altitudeRaw;
+fd.altitudeFilt = fd.alpha * fd.altitudeRaw + (1 - fd.alpha) * fd.altitudeFiltered;
+// Use Filtered Altitude
+fd.altitude = fd.altitudeFilt;
+
+// Velocity
+fd.currentTime = millis();
+fd.deltaAltitude = fd.altitude - fd.lastAltitude;
+fd.deltaTime = (fd.currentTime - fd.lastTime) / 1000.0;
+if (fd.deltaTime > 0.02) {
+  fd.velocity = fd.deltaAltitude / fd.deltaTime;
+  if (fabs(fd.velocity) < 0.4) {
+    fd.velocity = 0.0;
+  }
+} else {
+  return;
+} 
 
 //      ----Mode Determiner Code----
 if(fd.simulationEnable && fd.simulationActivate) {
@@ -218,7 +280,11 @@ void UpdateFlightState(FlightData &fd) {
     if ((fd.altitude > -1 && fd.altitude < 1) || (fd.velocity > -1 && fd.velocity < 1)){
       flightState = LANDED;
     }
+    break;
+  case LANDED:
+    break;
   }
+  
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  Command Checker Function  ===================================
@@ -283,7 +349,7 @@ void sendTelemetry(FlightData &fd) {
   Serial.print(stateNames[flightState]); Serial.print(",");
   Serial.print(fd.altitude, 2); Serial.print(",");
   Serial.print(fd.temperature, 1); Serial.print(",");
-  Serial.print(fd.pressure_kPa, 1); Serial.print(",");
+  Serial.print(fd.pressure_Pa / 1000, 1); Serial.print(",");
   Serial.print(fd.battery_Voltage, 2); Serial.print(",");
   Serial.print(fd.current, 2); Serial.print(",");
   Serial.print(fd.gyro_Roll, 1); Serial.print(",");
