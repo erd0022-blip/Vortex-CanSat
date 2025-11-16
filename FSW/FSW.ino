@@ -61,7 +61,6 @@ bool simulationEnable = false;
 bool simulationActivate = false;
 bool simulationDisable = true;
 bool calibrateAltitude = false;
-bool deployParaglider = false;
 bool manualParaglider = false;
 bool eepromMode = false;
 bool eepromWipe = false;
@@ -99,7 +98,9 @@ float basePressurePA;
 //                    -------- AUTONOMOUS --------
 int direction;
 float servoOutput;
-
+//                    -------- MECHANISMS --------
+bool deployParaglider = false;
+bool eggDrop = false;
 };
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  GLOBALS ===================================
@@ -186,6 +187,14 @@ sampleData(fd);
 apogeeDetection(fd);
 
 UpdateFlightState(fd);
+
+if (fd.deployParaglider) {
+  // myservo.writeMicroseconds(###);
+}
+
+if (fd.eggDrop) {
+  // myservo.writeMicroseconds(###);
+}
 
 if (flightState = PROBE_RELEASE){
   autonomousControls(fd);
@@ -304,11 +313,13 @@ void UpdateFlightState(FlightData &fd) {
   case DESCENT:
     if (fd.altitude <= (fd.apogeeHeight * 0.80)){
       flightState = PROBE_RELEASE;
+      fd.deployParaglider = true;
     }
     break;
   case PROBE_RELEASE:
     if (fd.altitude <= 3.5){
       flightState = PAYLOAD_RELEASE;
+      fd.eggDrop = true;
     }
     break;
   case PAYLOAD_RELEASE:
