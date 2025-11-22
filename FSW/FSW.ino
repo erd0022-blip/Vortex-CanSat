@@ -60,7 +60,7 @@ float simulationPressure;
 bool simulationEnable = false;
 bool simulationActivate = false;
 bool simulationDisable = true;
-bool calibrateAltitude = false;
+bool altitudeCommand = true;
 bool manualParaglider = false;
 bool eepromMode = false;
 bool eepromWipe = false;
@@ -110,6 +110,7 @@ void sendTelemetry(FlightData &fd);
 void sampleData(FlightData &fd);
 void UpdateFlightState(FlightData &fd);
 void autonomousControls(FlightData &fd);
+void altitudeCalibration(FlightData &fd);
 
 //           ---- Struct Variable ----
 FlightData fd;
@@ -155,23 +156,6 @@ if (!bmp.begin_I2C()) {
     Serial.println("BMP390 Not Initialized");
 }
 
-//      --------- Base Pressure Calibration ---------
-  fd.startTime = millis();
-
-  while(fd.samplesTaken < 12) {
-    if ((millis() - fd.startTime) >= 250) {
-      fd.tempPressurePA = bmp.pressure;
-      if (fd.tempPressurePA >= 95000.0 && fd.tempPressurePA <= 105000.0 ) {
-        fd.sum += fd.tempPressurePA;
-        fd.validCount++;
-      }
-      fd.samplesTaken++;
-      fd.startTime = millis();
-    }
-  }
-
-  fd.basePressurePA = (fd.validCount > 0) ? fd.sum / fd.validCount : 101325.0;
-
 //      --------- Timers ---------
 fd.prevGPSTime = 0;
 
@@ -182,6 +166,8 @@ void loop() {
 
 commandChecker(fd);
 
+altitudeCalibration(fd);
+
 sampleData(fd);
 
 apogeeDetection(fd);
@@ -189,6 +175,10 @@ apogeeDetection(fd);
 UpdateFlightState(fd);
 
 if (fd.deployParaglider) {
+  // myservo.writeMicroseconds(###);
+}
+
+if (fd.manualParaglider) {
   // myservo.writeMicroseconds(###);
 }
 
@@ -289,6 +279,29 @@ void apogeeDetection(FlightData &fd){
     }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                           ===================================  ALTITUDE CALIBRATION  ===================================
+void altitudeCalibration(FlightData &fd) {
+  if(fd.altitudeCommand) {
+//      --------- Base Pressure Calibration ---------
+  fd.startTime = millis();
+
+  while(fd.samplesTaken < 12) {
+    if ((millis() - fd.startTime) >= 80) {
+      fd.tempPressurePA = bmp.pressure;
+      if (fd.tempPressurePA >= 95000.0 && fd.tempPressurePA <= 105000.0 ) {
+        fd.sum += fd.tempPressurePA;
+        fd.validCount++;
+      }
+      fd.samplesTaken++;
+      fd.startTime = millis();
+    }
+  }
+
+  fd.basePressurePA = (fd.validCount > 0) ? fd.sum / fd.validCount : 101325.0;
+  fd.altitudeCommand = false;
+  }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  FLIGHT STATE  ===================================
 void UpdateFlightState(FlightData &fd) {
   switch(flightState) {
@@ -356,11 +369,13 @@ void commandChecker(FlightData &fd){
       fd.simulationActivate = false;
       fd.simulationEnable = false;
     } else if (cmd == "CMD,1093,CAL") {
-      fd.calibrateAltitude = true;
+      fd.altitudeCommand = true;
     } else if (cmd == "CMD,1093,MEC,DEPLOY") {
       fd.deployParaglider = true;
     } else if (cmd == "CMD,1093,MEC,MANUAL") {
       fd.manualParaglider = true;
+    } else if (cmd == "CMD,1093,MEC,EGGDROP") {
+      fd.eggDrop = true;
     } else if (cmd == "CMD,1093,EEPROM,ENABLE") {
       fd.eepromMode = true;
     } else if (cmd == "CMD,1093,EEPROM,DISABLE") {
