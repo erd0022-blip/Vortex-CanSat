@@ -29,8 +29,6 @@ float gps_longitude;
 int gps_satellites;
 float gps_lat_land;
 float gps_long_land;
-float new_gps_lat;
-float new_gps_long;
 float future_gps_lat;
 float future_gps_long;
 float main_gps_vector;
@@ -38,6 +36,10 @@ float future_gps_vector;
 int hh;
 int mm;
 int ss;
+float gps_Lat;
+float gps_Long;
+float gps_NewLat;
+float gps_NewLong;
 
 //                    -------- MODE --------
 bool determinedMode;
@@ -300,6 +302,38 @@ if (data.gpgga_data.valid == 1) {
   fd.hh = gpsHH;
   fd.mm = gpsMM;
   fd.ss = gpsSS;
+  // assign the latitude and longitude spots for the autonomous controls
+  fd.gps_Lat = latitude;
+  fd.gps_Long = longitude;
+
+// GPS for the new position
+// Continually makes sure data is freshhh
+gps->update();
+// Read that fresh data
+data = gps->getData();
+// Only if we have a fix, take in that data
+if (data.gpgga_data.valid == 1) {
+  // get latitude, is in this format: dddmm.mmmm
+  float rawNewLat = data.gpgga_data.xyz.lat;
+  int latNewDeg = rawLat / 100;
+  float latNewMin = rawNewLat - (latNewDeg * 100);
+  float latitudeNew = latNewDeg + (latMin / 60.0);
+  // to check for south
+  if (data.gpgga_data.xyz.ns == 'S') {
+    latitudeNew = -latitudeNew;
+  }
+  // get longitude
+  float rawNewLon = data.gpgga_data.xyz.lon;
+  int lonNewDeg = rawNewLon / 100;
+  float lonNewMin = rawNewLon - (lonNewDeg * 100);
+  float longitudeNew = lonNewDeg + (lonNewMin / 60.0);
+  // to check for west
+  if (data.gpgga_data.xyz.ew == 'W') {
+    longitudeNew = -longitudeNew;
+  }
+  fd.gps_NewLat = latitudeNew;
+  fd.gps_NewLong = longitudeNew;
+
 
 }
 
@@ -464,10 +498,10 @@ void commandChecker(FlightData &fd){
 //                                           ===================================  AUTONOMOUS CONTROLS  ===================================
 void autonomousControls(FlightData &fd) {
 
-  float Cx = fd.gps_latitude;
-  float Cy = fd.gps_longitude;
-  float Nx = fd.new_gps_lat;
-  float Ny = fd.new_gps_long;
+  float Cx = fd.gps_Lat;
+  float Cy = fd.gps_Long;
+  float Nx = fd.gps_NewLat;
+  float Ny = fd.gps_NewLong;
   float Fx = fd.future_gps_lat;
   float Fy = fd.future_gps_long;
   float Lx = fd.gps_lat_land;
