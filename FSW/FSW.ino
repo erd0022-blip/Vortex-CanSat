@@ -55,6 +55,8 @@ float deltaTime;
 unsigned long lastTime;
 unsigned long newGPSTime;
 unsigned long prevGPSTime;
+unsigned long gpsNewTime = 0;
+int gpsTimeInterval = 5;
 //                    -------- TELEMETRY --------
 int packetCount;
 //                    -------- BATTERY --------
@@ -118,6 +120,7 @@ void sampleData(FlightData &fd);
 void UpdateFlightState(FlightData &fd);
 void autonomousControls(FlightData &fd);
 void altitudeCalibration(FlightData &fd);
+void newGPSData(FlightData &fd);
 
 //           ---- Struct Variable ----
 FlightData fd;
@@ -186,6 +189,12 @@ commandChecker(fd);
 altitudeCalibration(fd);
 
 sampleData(fd);
+
+if ((millis() - fd.gpsNewTime) > fd.gpsTimeInterval) {
+  newGPSData(fd);
+  fd.gpsNewTime = millis();
+}
+
 
 apogeeDetection(fd);
 
@@ -307,36 +316,6 @@ if (data.gpgga_data.valid == 1) {
   fd.gps_Long = longitude;
 }
 
-// GPS for the new position
-// Continually makes sure data is freshhh
-gps->update();
-// Read that fresh data
-data = gps->getData();
-// Only if we have a fix, take in that data
-if (data.gpgga_data.valid == 1) {
-  // get latitude, is in this format: dddmm.mmmm
-  float rawNewLat = data.gpgga_data.xyz.lat;
-  int latNewDeg = rawNewLat / 100;
-  float latNewMin = rawNewLat - (latNewDeg * 100);
-  float latitudeNew = latNewDeg + (latNewMin / 60.0);
-  // to check for south
-  if (data.gpgga_data.xyz.ns == 'S') {
-    latitudeNew = -latitudeNew;
-  }
-  // get longitude
-  float rawNewLon = data.gpgga_data.xyz.lon;
-  int lonNewDeg = rawNewLon / 100;
-  float lonNewMin = rawNewLon - (lonNewDeg * 100);
-  float longitudeNew = lonNewDeg + (lonNewMin / 60.0);
-  // to check for west
-  if (data.gpgga_data.xyz.ew == 'W') {
-    longitudeNew = -longitudeNew;
-  }
-  fd.gps_NewLat = latitudeNew;
-  fd.gps_NewLong = longitudeNew;
-}
-
-
 //      ----Mode Determiner Code----
 if(fd.simulationEnable && fd.simulationActivate) {
   fd.determinedMode = false;
@@ -346,6 +325,39 @@ if(fd.simulationEnable && fd.simulationActivate) {
 fd.mode = fd.determinedMode ? "F" : "S";
 
 
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                           ===================================  New GPS Data  ===================================
+void newGPSData(FlightData &fd){
+
+  // GPS for the new position
+  // Continually makes sure data is freshhh
+  gps->update();
+  // Read that fresh data
+  data = gps->getData();
+  // Only if we have a fix, take in that data
+  if (data.gpgga_data.valid == 1) {
+  // get latitude, is in this format: dddmm.mmmm
+    float rawNewLat = data.gpgga_data.xyz.lat;
+    int latNewDeg = rawNewLat / 100;
+    float latNewMin = rawNewLat - (latNewDeg * 100);
+    float latitudeNew = latNewDeg + (latNewMin / 60.0);
+  // to check for south
+   if (data.gpgga_data.xyz.ns == 'S') {
+      latitudeNew = -latitudeNew;
+  }
+  // get longitude
+    float rawNewLon = data.gpgga_data.xyz.lon;
+    int lonNewDeg = rawNewLon / 100;
+    float lonNewMin = rawNewLon - (lonNewDeg * 100);
+    float longitudeNew = lonNewDeg + (lonNewMin / 60.0);
+  // to check for west
+    if (data.gpgga_data.xyz.ew == 'W') {
+      longitudeNew = -longitudeNew;
+  }
+    fd.gps_NewLat = latitudeNew;
+    fd.gps_NewLong = longitudeNew;
+  }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  APOGEE DETECTION  ===================================
