@@ -305,6 +305,7 @@ if (data.gpgga_data.valid == 1) {
   // assign the latitude and longitude spots for the autonomous controls
   fd.gps_Lat = latitude;
   fd.gps_Long = longitude;
+}
 
 // GPS for the new position
 // Continually makes sure data is freshhh
@@ -315,9 +316,9 @@ data = gps->getData();
 if (data.gpgga_data.valid == 1) {
   // get latitude, is in this format: dddmm.mmmm
   float rawNewLat = data.gpgga_data.xyz.lat;
-  int latNewDeg = rawLat / 100;
+  int latNewDeg = rawNewLat / 100;
   float latNewMin = rawNewLat - (latNewDeg * 100);
-  float latitudeNew = latNewDeg + (latMin / 60.0);
+  float latitudeNew = latNewDeg + (latNewMin / 60.0);
   // to check for south
   if (data.gpgga_data.xyz.ns == 'S') {
     latitudeNew = -latitudeNew;
@@ -333,8 +334,6 @@ if (data.gpgga_data.valid == 1) {
   }
   fd.gps_NewLat = latitudeNew;
   fd.gps_NewLong = longitudeNew;
-
-
 }
 
 
