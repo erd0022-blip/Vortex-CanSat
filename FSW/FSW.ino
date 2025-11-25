@@ -5,6 +5,7 @@
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BMP3XX.h"
 #include <Servo.h>
+#include "teseo_liv3f_class.h"
 
 
 
@@ -34,6 +35,9 @@ float future_gps_lat;
 float future_gps_long;
 float main_gps_vector;
 float future_gps_vector;
+int hh;
+int mm;
+int ss;
 
 //                    -------- MODE --------
 bool determinedMode;
@@ -64,6 +68,7 @@ bool altitudeCommand = true;
 bool manualParaglider = false;
 bool eepromMode = false;
 bool eepromWipe = false;
+bool missionTimeBool = false;
 String cmd_echo;
 //                    -------- Altitude --------
 float altitude;
@@ -137,8 +142,14 @@ const char* stateNames[7] = {
  FlightState flightState = LAUNCHPAD;
 
 //      ------ Sensor Inits ------
+// Pressure, Temp
 Adafruit_BMP3XX bmp;
- // you can always do bmp(SDA_Pin,SCL_Pin) to set it to something specific rather than default
+ // reminder to do bmp(SDA_Pin,SCL_Pin) to set it to something specific rather than default
+
+// GPS
+TeseoLIV3F *gps;
+GNSSParser_Data_t data;
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  VOID SETUP  ===================================
 void setup() {
@@ -156,6 +167,10 @@ if (!bmp.begin_I2C()) {
     Serial.println("BMP390 Not Initialized");
 }
 
+// GPS Initialization
+gps = new TeseoLIV3F(&Wire,7,13);
+gps->init();
+Serial.println("GPS Ready");
 //      --------- Timers ---------
 fd.prevGPSTime = 0;
 
@@ -241,7 +256,53 @@ if (fd.deltaTime > 0.02) {
   }
 } else {
   return;
-} 
+}
+
+// GPS
+// Continually makes sure data is freshhh
+gps->update();
+// Read that fresh data
+data = gps->getData();
+// Only if we have a fix, take in that data
+if (data.gpgga_data.valid == 1) {
+  // get latitude, is in this format: dddmm.mmmm
+  float rawLat = data.gpgga_data.xyz.lat;
+  int latDeg = rawLat / 100;
+  float latMin = rawLat - (latDeg * 100);
+  float latitude = latDeg + (latMin / 60.0);
+  // to check for south
+  if (data.gpgga_data.xyz.ns == 'S') {
+    latitude = -latitude;
+  }
+  // get longitude
+  float rawLon = data.gpgga_data.xyz.lon;
+  int lonDeg = rawLon / 100;
+  float lonMin = rawLon - (lonDeg * 100);
+  float longitude = lonDeg + (lonMin / 60.0);
+  // to check for west
+  if (data.gpgga_data.xyz.ew == 'W') {
+    longitude = -longitude;
+  }
+  // GPS altitude
+  float gpsAltitude = data.gpgga_data.xyz.alt;
+  // GPS satellites
+  int gpsSats = data.gpgga_data.sats;
+  // Mission Time
+  int gpsHH = data.gpgga_data.utc.hh;
+  int gpsMM = data.gpgga_data.utc.mm;
+  int gpsSS = data.gpgga_data.utc.ss;
+
+  // assign everything to their telemetry spot:
+  fd.gps_altitude = gpsAltitude;
+  fd.gps_latitude = latDeg;
+  fd.gps_longitude = lonDeg;
+  fd.gps_satellites = gpsSats;
+  fd.hh = gpsHH;
+  fd.mm = gpsMM;
+  fd.ss = gpsSS;
+
+}
+
 
 //      ----Mode Determiner Code----
 if(fd.simulationEnable && fd.simulationActivate) {
@@ -359,6 +420,8 @@ void commandChecker(FlightData &fd){
       fd.telemetryStatus = true;
     } else if (cmd == "CMD,1093,CX,OFF") {
       fd.telemetryStatus = false;
+    } else if (cmd == "CMD,1093,ST") {
+      fd.missionTimeBool = true;
     } else if (cmd == "CMD,1093,SIM,ENABLE") {
       fd.simulationEnable = true;
       fd.simulationDisable = false;
@@ -457,7 +520,15 @@ void autonomousControls(FlightData &fd) {
 void sendTelemetry(FlightData &fd) {
 
   Serial.print(fd.teamID); Serial.print(",");
-  Serial.print(fd.missionTime); Serial.print(",");
+  if (fd.missionTimeBool) {
+    Serial.print(fd.hh); Serial.print(":");
+    Serial.print(fd.mm); Serial.print(":");
+    Serial.print(fd.ss); Serial.print(",");
+  } else {
+    Serial.print("00"); Serial.print(":");
+    Serial.print("00"); Serial.print(":");
+    Serial.print("00"); Serial.print(",");
+  }
   Serial.print(fd.packetCount); Serial.print(",");
   Serial.print(fd.mode); Serial.print(",");
   Serial.print(stateNames[flightState]); Serial.print(",");
@@ -472,7 +543,9 @@ void sendTelemetry(FlightData &fd) {
   Serial.print(fd.acceleration_roll, 2); Serial.print(",");
   Serial.print(fd.acceleration_pitch, 2); Serial.print(",");
   Serial.print(fd.acceleration_yaw, 2); Serial.print(",");
-  Serial.print(fd.gps_time); Serial.print(",");
+  Serial.print(fd.hh); Serial.print(":");
+  Serial.print(fd.mm); Serial.print(":");
+  Serial.print(fd.ss); Serial.print(",");
   Serial.print(fd.gps_altitude); Serial.print(",");
   Serial.print(fd.gps_latitude, 5); Serial.print(",");
   Serial.print(fd.gps_longitude, 5); Serial.print(",");
@@ -486,4 +559,4 @@ void sendTelemetry(FlightData &fd) {
   }
   Serial.print(fd.velocity); Serial.println();
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
