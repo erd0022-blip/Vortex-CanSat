@@ -4,7 +4,7 @@
 #include <math.h>
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BMP3XX.h"
-#include <Servo.h>
+//#include <Servo.h>
 #include "teseo_liv3f_class.h"
 
 
@@ -194,7 +194,6 @@ if ((millis() - fd.gpsNewTime) > fd.gpsTimeInterval) {
   newGPSData(fd);
   fd.gpsNewTime = millis();
 }
-
 
 apogeeDetection(fd);
 
@@ -419,7 +418,7 @@ void UpdateFlightState(FlightData &fd) {
   case ASCENT: 
       if (fd.apogeeDetected) {
         flightState = APOGEE;
-        Serial1.print(fd.apogeeHeight);
+        Serial.print(fd.apogeeHeight);
     } else if (fd.velocity > -0.5 && fd.velocity < 0.5 && fd.altitude > 500) {
         flightState = APOGEE;
       } 
