@@ -6,6 +6,7 @@
 #include "Adafruit_BMP3XX.h"
 //#include <Servo.h>
 #include "teseo_liv3f_class.h"
+#include "BMI088.h"
 
 
 
@@ -14,9 +15,12 @@
 struct FlightData {
 
 //                    -------- GYROSCOPE --------
-float gyro_Roll;
-float gyro_Pitch;
-float gyro_Yaw;
+float gyro_NowRoll;
+float gyro_NowPitch;
+float gyro_NowYaw;
+float gyro_PrevRoll;
+float gyro_PrevPitch;
+float gyro_PrevYaw;
 //                    -------- ACCELERATION OF GYRO --------
 float acceleration_roll;
 float acceleration_pitch;
@@ -57,11 +61,19 @@ unsigned long newGPSTime;
 unsigned long prevGPSTime;
 unsigned long gpsNewTime = 0;
 int gpsTimeInterval = 5;
+unsigned long gyroCurrentTime = millis();
+unsigned long gyroPrevTime;
+unsigned long gyroDT;
 //                    -------- TELEMETRY --------
 int packetCount;
 //                    -------- BATTERY --------
 float battery_Voltage;
 float current;
+float R1;
+float R2;
+float ADC_REF;
+int ADC_RESOLUTION_CV = 4095;
+int batteryPin;
 //                    -------- COMMANDS --------
 bool telemetryStatus = false;
 float simulationPressure;
@@ -155,6 +167,10 @@ Adafruit_BMP3XX bmp;
 TeseoLIV3F *gps;
 GNSSParser_Data_t data;
 
+// Aceleration and Gyroscope
+Bmi088Accel accel(Wire,0x18);
+Bmi088Gyro gyro(Wire,0x68);
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  VOID SETUP  ===================================
 void setup() {
@@ -167,17 +183,32 @@ bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
 bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
 bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
 bmp.setOutputDataRate(BMP3_ODR_50_HZ);
-
+// Pressure and Temp Initialization
 if (!bmp.begin_I2C()) {
     Serial.println("BMP390 Not Initialized");
 }
+// Accel and Gyro Initialization
+if (!accel.begin()) {
+  Serial.println("Accel Initialization Error");
+}
+if (!gyro.begin()) {
+  Serial.println("Gyro Initialization Error");
+}
+fd.gyro_PrevRoll = 0;
+fd.gyro_PrevPitch = 0;
+fd.gyro_PrevYaw = 0;
 
+gyro.setOdr(Bmi088Gyro::ODR_200HZ_BW_64HZ);
+gyro.setRange(Bmi088Gyro::RANGE_500DPS);
 // GPS Initialization
 gps = new TeseoLIV3F(&Wire,7,13);
 gps->init();
 Serial.println("GPS Ready");
+// Battery (setting the adc resolution)
+analogReadResolution(12);
 //      --------- Timers ---------
 fd.prevGPSTime = 0;
+fd.gyroPrevTime = 0;
 
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -241,12 +272,28 @@ if (fd.telemetryStatus){
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  SAMPLE DATA  ===================================
 void sampleData(FlightData &fd) {
+
 bmp.performReading();
+gyro.readSensor();
+
 //      ----BMP390 Sampling Code----
 // Pressure
 fd.pressure_Pa = bmp.pressure;
 // Temperature
 fd.temperature = bmp.temperature;
+// Gyroscope
+fd.gyro_NowRoll = (gyro.getGyroX_rads() * 180) / PI;
+fd.gyro_NowPitch = (gyro.getGyroY_rads() * 180) / PI;
+fd.gyro_NowYaw = (gyro.getGyroY_rads() * 180) / PI;
+//  Acceleration
+fd.gyroDT = (fd.gyroCurrentTime - fd.gyroPrevTime) / 1000.0;
+fd.acceleration_roll = (fd.gyro_NowRoll - fd.gyro_PrevRoll) / fd.gyroDT;
+fd.acceleration_pitch = (fd.gyro_NowPitch - fd.gyro_PrevPitch) / fd.gyroDT;
+fd.acceleration_yaw = (fd.gyro_NowYaw - fd.gyro_PrevYaw) / fd.gyroDT;
+// -- make previous equal to now to update them --
+fd.gyro_PrevRoll = fd.gyro_NowRoll;
+fd.gyro_PrevPitch = fd.gyro_NowPitch;
+fd.gyro_PrevYaw = fd.gyro_NowYaw;
 
 // Altitude
 fd.altitudeRaw = 44330 * (1 - pow((fd.pressure_Pa / fd.basePressurePA), 1.0 / 5.255));
@@ -267,6 +314,12 @@ if (fd.deltaTime > 0.02) {
 } else {
   return;
 }
+
+// Battery
+int rawSensorValue = analogRead(fd.batteryPin);
+float ADCVoltage = ((rawSensorValue / fd.ADC_RESOLUTION_CV) * fd.ADC_REF);
+fd.battery_Voltage = ADCVoltage * ((fd.R1 + fd.R2) / fd.R2);
+
 
 // GPS
 // Continually makes sure data is freshhh
@@ -581,9 +634,9 @@ void sendTelemetry(FlightData &fd) {
   Serial.print(fd.pressure_Pa / 1000, 1); Serial.print(",");
   Serial.print(fd.battery_Voltage, 2); Serial.print(",");
   Serial.print(fd.current, 2); Serial.print(",");
-  Serial.print(fd.gyro_Roll, 1); Serial.print(",");
-  Serial.print(fd.gyro_Pitch, 1); Serial.print(",");
-  Serial.print(fd.gyro_Yaw, 1); Serial.print(",");
+  Serial.print(fd.gyro_NowRoll, 1); Serial.print(",");
+  Serial.print(fd.gyro_NowPitch, 1); Serial.print(",");
+  Serial.print(fd.gyro_NowYaw, 1); Serial.print(",");
   Serial.print(fd.acceleration_roll, 2); Serial.print(",");
   Serial.print(fd.acceleration_pitch, 2); Serial.print(",");
   Serial.print(fd.acceleration_yaw, 2); Serial.print(",");
