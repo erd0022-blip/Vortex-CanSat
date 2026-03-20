@@ -4,9 +4,11 @@
 #include <math.h>
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BMP3XX.h"
-//#include <Servo.h>
+#include <Servo.h>
 #include "teseo_liv3f_class.h"
 #include "BMI088.h"
+
+
 
 
 
@@ -27,24 +29,21 @@ float acceleration_pitch;
 float acceleration_yaw;
 //                    -------- GPS VARIABLES --------
 float gps_time;
-float gps_altitude;
-float gps_latitude;
-float gps_longitude; 
+float gps_altitude; 
 int gps_satellites;
-float gps_lat_land;
-float gps_long_land;
-float future_gps_lat;
-float future_gps_long;
-float main_gps_vector;
-float future_gps_vector;
 int hh;
 int mm;
 int ss;
+float gpsPrevLat;
+float gpsPrevLong;
+float gpsNowLat;
+float gpsNowLong;
+float gpsTargetLat;
+float gpsTargetLong;
+float gps_latitude;
+float gps_longitude;
 float gps_Lat;
 float gps_Long;
-float gps_NewLat;
-float gps_NewLong;
-
 //                    -------- MODE --------
 bool determinedMode;
 String mode;
@@ -379,37 +378,10 @@ fd.mode = fd.determinedMode ? "F" : "S";
 
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//                                           ===================================  New GPS Data  ===================================
+//                                           =================================== GPS Data ===================================
 void newGPSData(FlightData &fd){
 
-  // GPS for the new position
-  // Continually makes sure data is freshhh
-  gps->update();
-  // Read that fresh data
-  data = gps->getData();
-  // Only if we have a fix, take in that data
-  if (data.gpgga_data.valid == 1) {
-  // get latitude, is in this format: dddmm.mmmm
-    float rawNewLat = data.gpgga_data.xyz.lat;
-    int latNewDeg = rawNewLat / 100;
-    float latNewMin = rawNewLat - (latNewDeg * 100);
-    float latitudeNew = latNewDeg + (latNewMin / 60.0);
-  // to check for south
-   if (data.gpgga_data.xyz.ns == 'S') {
-      latitudeNew = -latitudeNew;
-  }
-  // get longitude
-    float rawNewLon = data.gpgga_data.xyz.lon;
-    int lonNewDeg = rawNewLon / 100;
-    float lonNewMin = rawNewLon - (lonNewDeg * 100);
-    float longitudeNew = lonNewDeg + (lonNewMin / 60.0);
-  // to check for west
-    if (data.gpgga_data.xyz.ew == 'W') {
-      longitudeNew = -longitudeNew;
-  }
-    fd.gps_NewLat = latitudeNew;
-    fd.gps_NewLong = longitudeNew;
-  }
+
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  APOGEE DETECTION  ===================================
@@ -561,53 +533,6 @@ void commandChecker(FlightData &fd){
 //                                           ===================================  AUTONOMOUS CONTROLS  ===================================
 void autonomousControls(FlightData &fd) {
 
-  float Cx = fd.gps_Lat;
-  float Cy = fd.gps_Long;
-  float Nx = fd.gps_NewLat;
-  float Ny = fd.gps_NewLong;
-  float Fx = fd.future_gps_lat;
-  float Fy = fd.future_gps_long;
-  float Lx = fd.gps_lat_land;
-  float Ly = fd.gps_long_land;
-  float Z_direction;
-  float In_min;
-  float In_max;
-  float Out_max;
-  float Out_min;
-
-
-  fd.newGPSTime = millis();
-  unsigned long deltaGPSTime = (fd.newGPSTime - fd.prevGPSTime);
-  // Velocity Function for Lat and Long
-  float velocityGPSLat = (Nx - Cx) / deltaGPSTime;
-  float velocityGPSLong = (Ny - Cy) / deltaGPSTime;
-  // This is the future positon formula to eventually gain a future vector line
-  Fx = Cx + (velocityGPSLat * 1000);
-  Fy = Cy + (velocityGPSLong * 1000);
-  // Vector Creation
-  float Ax =  Fx - Cx;
-  float Ay =  Fy - Cy;
-  float Bx =  Lx - Cx;
-  float By =  Ly - Cy;
-  float A_B = (Ax * Bx) + (Ay * By);
-  float A_abs = sqrt( (Ax * Ax) + (Ay * Ay) );
-  float B_abs = sqrt( (Bx * Bx) + (By * By) );
-  // The degree between the two Vectors formula
-  float degreeVector = acos((A_B)/(A_abs * B_abs));
-
-  // Mapping Range to Range formula to translate Angle input to Servo Output
-  fd.servoOutput = Out_min + ( ( (degreeVector - In_min) * (Out_max - Out_min) ) / ( In_max - In_min  )  );
-
-
-  // Used to determine which direction to Turn
-  Z_direction = (Ax * By) - (Ay * Bx);
-  if(Z_direction > 0.2) {
-    fd.direction = 1; // Turn Left
-  } else if(Z_direction < -0.2){
-    fd.direction = 2; // Turn Right
-  } else if(Z_direction >= -0.2 && Z_direction <= 0.2) {
-    fd.direction = 3; // Z value is apporximatley 0, so we'll stay straight.
-  }
 
 }
 
