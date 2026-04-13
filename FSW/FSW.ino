@@ -3,10 +3,13 @@
 #include <Wire.h>
 #include <math.h>
 #include <Adafruit_Sensor.h>
+#include <PWMServo.h>
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 #include "Adafruit_BMP3XX.h"
-#include <Servo.h>
-#include "teseo_liv3f_class.h"
-#include "BMI088.h"
+#include <Adafruit_BNO055.h>
+#include <utility/imumaths.h>
+#include <TeensyThreads.h>
+#include <SD.h>
 
 
 
@@ -17,74 +20,92 @@
 struct FlightData {
 
 //                    -------- GYROSCOPE --------
-float gyro_NowRoll;
-float gyro_NowPitch;
-float gyro_NowYaw;
-float gyro_PrevRoll;
-float gyro_PrevPitch;
-float gyro_PrevYaw;
+double gx = 67;
+double gy = 67;
+double gz = 67;
+float Pgx = 0.0;
+float Pgy = 0.0;
+float Pgz = 0.0;
+float Pgt = 0;
+float Ngt = millis();
+double ox;
+double oy;
+double oz;
+
 //                    -------- ACCELERATION OF GYRO --------
-float acceleration_roll;
-float acceleration_pitch;
-float acceleration_yaw;
+double ax;
+double ay;
+double az;
 //                    -------- GPS VARIABLES --------
-float gps_time;
-float gps_altitude; 
-int gps_satellites;
-int hh;
-int mm;
-int ss;
-float gpsPrevLat;
-float gpsPrevLong;
-float gpsNowLat;
-float gpsNowLong;
-float gpsTargetLat;
-float gpsTargetLong;
-float gps_latitude;
-float gps_longitude;
-float gps_Lat;
-float gps_Long;
+double New_Lat;
+double New_Long;
+double GPS_Altitude;
+int GPS_Hour = 0;
+int GPS_Minutes = 0;
+int GPS_Seconds = 0;
+int GPS_Satellites;
+
 //                    -------- MODE --------
-bool determinedMode;
+bool determinedMode = true;
 String mode;
+bool cameraBool = true;
 //                    -------- TIMERS --------
 unsigned long missionTime;
 unsigned long telemetryTime = 0;
-int telemetryInterval = 1000;
+const unsigned long telemetryInterval = 180;
 unsigned long sdCardTime = 0;
 int sdCardTimeInterval;
 unsigned long currentTime;
 float deltaTime;
 unsigned long lastTime;
-unsigned long newGPSTime;
-unsigned long prevGPSTime;
-unsigned long gpsNewTime = 0;
-int gpsTimeInterval = 5;
-unsigned long gyroCurrentTime = millis();
-unsigned long gyroPrevTime;
-unsigned long gyroDT;
+float PIDTimer;
+float PIDInterval = 1000;
+float dt;
+
+int Thour;
+int Tminute;
+int Tsecond;
+
 //                    -------- TELEMETRY --------
-int packetCount;
+int packetCount = 0;
+
+
 //                    -------- BATTERY --------
 float battery_Voltage;
 float current;
 float R1;
 float R2;
-float ADC_REF;
+float ADC_REF = 5.0;
 int ADC_RESOLUTION_CV = 4095;
-int batteryPin;
+int batteryPin = 14;
+float rawSensorValue;
+float VoltageInput;
+float Zero_Point;
+float CurrentSensorValue;
+float Vpin;
+float Vout;
+float CurrentPin = 15;
+float VoltageReading;
+float Sensitivity = 0.185; //185 mV / A
+
+
 //                    -------- COMMANDS --------
-bool telemetryStatus = false;
+bool telemetryStatus = true;
 float simulationPressure;
 bool simulationEnable = false;
 bool simulationActivate = false;
+bool simulationMode = false;
 bool simulationDisable = true;
 bool altitudeCommand = true;
-bool manualParaglider = false;
 bool eepromMode = false;
 bool eepromWipe = false;
 bool missionTimeBool = false;
-String cmd_echo;
+bool deployParaglider = false;
+bool eggDrop = false;
+String cmd_echo = "CMD_ECHO";
+bool basePressureBool = true;
+String cmd;
+
 //                    -------- Altitude --------
 float altitude;
 float altitudeRaw;
@@ -95,18 +116,25 @@ float deltaAltitude;
 float lastAltitude;
 //                    -------- Velocity --------
 float velocity;
+float prevAltitude = 0;
+double deltaAltTime;
+double AltTimeNow;
+float rawVelocity;
+
 //                    -------- MISC --------
 float temperature; 
-float pressure_Pa;
+float pressurePA;
 int teamID = 1093;
 
 //                    -------- APOGEE DETECTION FUNCTION --------
-bool apogeeDetected = false;
-int sampleCount = 0;
-int altIndex;
-float altitudeSamples[6];
-static const int ALT_BUFF = 6;
-float apogeeHeight;
+// -------- APOGEE DETECTION FUNCTION --------
+bool AltWait = false;
+float secondAltitude = 0;
+float thirdAltitude = 0;
+float apogeeHeight = 0;
+int fallingCount = 0;
+float maxAltitude = 0;
+bool apogeeArmed = false;
 
 //                    -------- BASE PRESSURE CALIBRATION --------
 unsigned long startTime;
@@ -118,9 +146,85 @@ float basePressurePA;
 //                    -------- AUTONOMOUS --------
 int direction;
 float servoOutput;
-//                    -------- MECHANISMS --------
-bool deployParaglider = false;
-bool eggDrop = false;
+float ACS_Time = 0;
+float ACS_Interval = 500;
+
+double A;
+double B;
+double T_Lat = 34.72152;
+double T_Long = -86.63714;
+double C;
+double D;
+double C_Lat;
+double C_Long;
+double E;
+double F;
+double P_Lat;
+double P_Long;
+double X1;
+double Y1;
+double X2;
+double Y2;
+
+double Target_Bearing;
+double Current_Bearing;
+
+double TB_Degree;
+double CB_Degree;
+double error;
+
+volatile int ACS_ServoDeterminer = 0;
+volatile bool ServosAreAvailable = true;
+
+float dError;
+float prevError = 0;
+
+unsigned long lastPrevUpdate = 0;
+unsigned long prevInterval = 1500; // 1 second
+
+float Proportional;
+float Derivative;
+float PIDOutput;
+float Pgain = 1;
+float Dgain = 0.4;
+
+//                    -------- MosFets --------
+int TopSMosfet = 27;
+int BottomSMosfet = 39;
+int RightSMosfet = 41;
+int LeftSMosfet = 21;
+
+//                    -------- SD Card --------
+unsigned long SDCARDTimer = 0;
+unsigned long SDCARDInterval = 250;
+
+//                    -------- Camera MosFets --------
+int TopCamera = 31;
+int BottomCamera = 30;
+
+
+
+//                    -------- Apogee --------
+unsigned long AscentTimer = 0;
+int ApogeeCounter = 0;
+float prevApogeeAlt = 0;
+
+//                    -------- Distance --------
+double latTarget;
+double longTarget;
+double latCurrent;
+double longCurrent;
+double deltaLat;
+double deltaLong;
+double a;
+double c;
+double R = 6371;
+double Distance;
+
+//                    -------- Processor Restart --------
+bool resetOn = true;
+
+
 };
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  GLOBALS ===================================
@@ -128,16 +232,19 @@ bool eggDrop = false;
 void commandChecker(FlightData &fd);
 void sendTelemetry(FlightData &fd);
 void sampleData(FlightData &fd);
-void UpdateFlightState(FlightData &fd);
+void UpdateFlightState(void *arg);
 void autonomousControls(FlightData &fd);
 void altitudeCalibration(FlightData &fd);
 void newGPSData(FlightData &fd);
+void apogeeDetection(FlightData &fd);
+void saveToSDCARD(FlightData &fd);
+void ServoFunction(void *arg);
 
 //           ---- Struct Variable ----
 FlightData fd;
 //      ------ STATE MACHINE FUNCTION ------
 enum FlightState { 
-  LAUNCHPAD, 
+  LAUNCH_PAD, 
   ASCENT, 
   APOGEE, 
   DESCENT, 
@@ -147,7 +254,7 @@ enum FlightState {
   };
 
 const char* stateNames[7] = {
-  "LAUNCHPAD", 
+  "LAUNCH_PAD", 
   "ASCENT", 
   "APOGEE", 
   "DESCENT", 
@@ -155,259 +262,416 @@ const char* stateNames[7] = {
   "PAYLOAD_RELEASE", 
   "LANDED"
   };
- FlightState flightState = LAUNCHPAD;
+ FlightState flightState = LAUNCH_PAD;
 
 //      ------ Sensor Inits ------
 // Pressure, Temp
 Adafruit_BMP3XX bmp;
- // reminder to do bmp(SDA_Pin,SCL_Pin) to set it to something specific rather than default
 
+/* Set the delay between fresh samples */
+uint16_t BNO055_SAMPLERATE_DELAY_MS = 100;
+// Check I2C device address and correct line below (by default address is 0x29 or 0x28)
+//id, address
+Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, &Wire);
 // GPS
-TeseoLIV3F *gps;
-GNSSParser_Data_t data;
+SFE_UBLOX_GNSS myGNSS;
 
-// Aceleration and Gyroscope
-Bmi088Accel accel(Wire,0x18);
-Bmi088Gyro gyro(Wire,0x68);
+//                    -------- SD CARD --------
+const int chipSelect = BUILTIN_SDCARD;
+File dataFile;
+File countState;
+File resetBool;
+File countFile;
+// SD Reset on/off
+String Bool;
+String nameOfState;
+int i = 0;
+
+
+// Servos
+PWMServo TopS;
+PWMServo BottomS;
+PWMServo LeftS;
+PWMServo RightS;
+
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  VOID SETUP  ===================================
 void setup() {
-Serial.begin(115200);
-Wire.begin();
+
+  Serial1.begin(115200);
+  Serial.begin(115200);
+  SD.begin(chipSelect);
+  Wire.begin();
+  delay(200);
+
+  // Setting the ADC to 12-bit
+  analogReadResolution(12);
+
+  // Reset apogee components
+
+  //BMP 390 oversampling and filter initialization
+  bmp.begin_I2C();
+  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  bmp.setOutputDataRate(BMP3_ODR_50_HZ);
+
+  // GPS
+  myGNSS.begin();
+  myGNSS.setI2COutput(COM_TYPE_UBX);
+  myGNSS.setNavigationFrequency(20);
+  myGNSS.setAutoPVT(true);
+
+  // SD Card
+  dataFile = SD.open("Vortex_SD_CARD.txt", FILE_WRITE);
+
+  // BNO
+  bno.begin();
+
+  //Servos
+  TopS.attach(12); // J11 // Mosfet Pin: 27
+  BottomS.attach(9); // J10 // Mosfet Pin: 39
+  LeftS.attach(3); // J8 // Mosfet Pin: 21
+  RightS.attach(6); // J9 // Mosfet Pin: 41
+  delay(200);
+
+  pinMode(fd.BottomSMosfet,OUTPUT);
+  pinMode(fd.TopSMosfet,OUTPUT);
+  pinMode(fd.RightSMosfet,OUTPUT);
+  pinMode(fd.LeftSMosfet,OUTPUT);
+  pinMode(fd.TopCamera,OUTPUT);
+  pinMode(fd.BottomCamera,OUTPUT);
+  digitalWrite(fd.BottomSMosfet, LOW);
+  digitalWrite(fd.TopSMosfet, LOW);
+  digitalWrite(fd.LeftSMosfet, LOW);
+  digitalWrite(fd.RightSMosfet, LOW);
+  digitalWrite(fd.TopCamera, LOW);
+  digitalWrite(fd.BottomCamera, LOW);
+  delay(300);
+
+/*
+  resetBool = SD.open("resetBool.txt", FILE_READ);
+  if (resetBool){
+    Bool = "";
+    while (resetBool.available()) {
+      Bool += (char)resetBool.read();
+    }
+    Bool.trim();
+    fd.resetOn = (Bool == 1);
+    resetBool.close();
+  }
+
+  countState = SD.open("flightState.txt", FILE_READ);
+  if ((countState) && (fd.resetOn)) {
+    nameOfState = "";
+    while (countState.available()) {
+      nameOfState += (char)countState.read();
+    }
+    nameOfState.trim();
+    countState.close();
+    for (int fs = 0; fs < 7; fs++) {
+      if (nameOfState == stateNames[fs]) {
+        i = fs;
+        flightState = FlightState(i);
+        break;
+      }
+    }
+
+  } else {
+    flightState = LAUNCH_PAD;
+  }
 
 
-// Set up oversampling and filter initialization
-bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
-bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
-bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
-bmp.setOutputDataRate(BMP3_ODR_50_HZ);
-// Pressure and Temp Initialization
-if (!bmp.begin_I2C()) {
-    Serial.println("BMP390 Not Initialized");
-}
-// Accel and Gyro Initialization
-if (!accel.begin()) {
-  Serial.println("Accel Initialization Error");
-}
-if (!gyro.begin()) {
-  Serial.println("Gyro Initialization Error");
-}
-fd.gyro_PrevRoll = 0;
-fd.gyro_PrevPitch = 0;
-fd.gyro_PrevYaw = 0;
+  countFile = SD.open("PacketNum.txt", FILE_READ);
+  if ((countFile) && (fd.resetOn)) {
+    String savedCount = "";
+    while (countFile.available()) {
+      savedCount += (char)countFile.read();
+    }
+    savedCount.trim();
+    fd.packetCount = savedCount.toInt();
+    countFile.close();
+  } else {
+    fd.packetCount = 0;
+  }
 
-gyro.setOdr(Bmi088Gyro::ODR_200HZ_BW_64HZ);
-gyro.setRange(Bmi088Gyro::RANGE_500DPS);
-// GPS Initialization
-gps = new TeseoLIV3F(&Wire,7,13);
-gps->init();
-Serial.println("GPS Ready");
-// Battery (setting the adc resolution)
-analogReadResolution(12);
-//      --------- Timers ---------
-fd.prevGPSTime = 0;
-fd.gyroPrevTime = 0;
+*/
+
+
+  
+
+  //Top
+  digitalWrite(fd.TopSMosfet, HIGH);
+  delay(500);
+  TopS.write(41);
+  delay(500);
+  TopS.write(29);
+  delay(500);
+  delay(300);
+  //Bottom
+  digitalWrite(fd.BottomSMosfet, HIGH);
+  delay(300);
+  BottomS.write(180);
+  delay(300);
+  digitalWrite(fd.BottomSMosfet, LOW);
+  delay(200);
+  
+  
+  // Thread Function for Servo Autonomous
+  threads.addThread(ServoFunction, &fd);
+  threads.addThread(UpdateFlightState, &fd);
+
+
+  altitudeCalibration(fd);
+  fd.simulationPressure = 101325.0;
+
+
 
 }
+
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                              ===================================  VOID LOOP  ===================================
 void loop() {
 
-commandChecker(fd);
+  // Chirp
 
-altitudeCalibration(fd);
 
-sampleData(fd);
+  commandChecker(fd);
 
-if ((millis() - fd.gpsNewTime) > fd.gpsTimeInterval) {
+  altitudeCalibration(fd);
+
+  sampleData(fd);
+
   newGPSData(fd);
-  fd.gpsNewTime = millis();
-}
 
-apogeeDetection(fd);
 
-UpdateFlightState(fd);
-
-if (fd.deployParaglider) {
-  // myservo.writeMicroseconds(###);
-}
-
-if (fd.manualParaglider) {
-  // myservo.writeMicroseconds(###);
-}
-
-if (fd.eggDrop) {
-  // myservo.writeMicroseconds(###);
-}
-
-if (flightState = PROBE_RELEASE){
-  autonomousControls(fd);
-  switch(fd.direction) {
-    case 1: // LEFT
-      Serial.print("Left");
-     // myservo.writeMicroseconds(fd.servoOutput);
-      break;
-    case 2: // RIGHT
-      Serial.print("Right");
-     // myservo.writemicroseconds(fd.servoOutput);
-      break;
-    case 3: // STAY STRAIGHT
-      Serial.print("Stay Straight");
-     // myservo.writeMicroseconds(fd.servoOutput);
-      break;
+  if(((millis()-fd.ACS_Time) > fd.ACS_Interval) && (flightState == PROBE_RELEASE)) {
+    autonomousControls(fd);
+    fd.ACS_Time = millis();
   }
-}
 
-
-if (fd.telemetryStatus){
-  if((millis() - fd.telemetryTime) > fd.telemetryInterval){
+  if(fd.telemetryStatus && ((millis() - fd.telemetryTime) >= 1000)) {
     sendTelemetry(fd);
     fd.telemetryTime = millis();
-    }
+    fd.packetCount ++;
   }
 
+  if(((millis() - fd.SDCARDTimer) >= fd.SDCARDInterval)){
+    saveToSDCARD(fd);
+    fd.SDCARDTimer = millis();
+  }
+
+  if ((fd.basePressureBool) && (fd.simulationMode)){
+    fd.pressurePA = 101325.0;
+    fd.basePressurePA = 101325.0;
+    fd.basePressureBool = false;
+  }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  SAMPLE DATA  ===================================
 void sampleData(FlightData &fd) {
 
-bmp.performReading();
-gyro.readSensor();
+// BMP390
 
-//      ----BMP390 Sampling Code----
-// Pressure
-fd.pressure_Pa = bmp.pressure;
-// Temperature
-fd.temperature = bmp.temperature;
-// Gyroscope
-fd.gyro_NowRoll = (gyro.getGyroX_rads() * 180) / PI;
-fd.gyro_NowPitch = (gyro.getGyroY_rads() * 180) / PI;
-fd.gyro_NowYaw = (gyro.getGyroY_rads() * 180) / PI;
-//  Acceleration
-fd.gyroDT = (fd.gyroCurrentTime - fd.gyroPrevTime) / 1000.0;
-fd.acceleration_roll = (fd.gyro_NowRoll - fd.gyro_PrevRoll) / fd.gyroDT;
-fd.acceleration_pitch = (fd.gyro_NowPitch - fd.gyro_PrevPitch) / fd.gyroDT;
-fd.acceleration_yaw = (fd.gyro_NowYaw - fd.gyro_PrevYaw) / fd.gyroDT;
-// -- make previous equal to now to update them --
-fd.gyro_PrevRoll = fd.gyro_NowRoll;
-fd.gyro_PrevPitch = fd.gyro_NowPitch;
-fd.gyro_PrevYaw = fd.gyro_NowYaw;
-
-// Altitude
-fd.altitudeRaw = 44330 * (1 - pow((fd.pressure_Pa / fd.basePressurePA), 1.0 / 5.255));
-fd.altitudeFiltered = fd.altitudeRaw;
-fd.altitudeFilt = fd.alpha * fd.altitudeRaw + (1 - fd.alpha) * fd.altitudeFiltered;
-// Use Filtered Altitude
-fd.altitude = fd.altitudeFilt;
-
-// Velocity
-fd.currentTime = millis();
-fd.deltaAltitude = fd.altitude - fd.lastAltitude;
-fd.deltaTime = (fd.currentTime - fd.lastTime) / 1000.0;
-if (fd.deltaTime > 0.02) {
-  fd.velocity = fd.deltaAltitude / fd.deltaTime;
-  if (fabs(fd.velocity) < 0.4) {
-    fd.velocity = 0.0;
-  }
+if(fd.simulationMode){
+  fd.pressurePA = fd.simulationPressure;
 } else {
-  return;
+  bmp.performReading();
+  fd.pressurePA = bmp.pressure;
+  fd.temperature = bmp.temperature;
 }
+/*
+bmp.performReading();
+fd.temperature = bmp.temperature;
+*/
+// Altitude
+if(fd.simulationMode){
+  fd.altitude = 44330.0 * (1 - pow(fd.simulationPressure / fd.basePressurePA, 0.1903));
+} else {
+  fd.altitude = 44330.0 * (1 - pow(fd.pressurePA / fd.basePressurePA, 0.1903));
+}
+
+//BNO
+// Possible vector values can be:
+  // - VECTOR_ACCELEROMETER - m/s^2
+  // - VECTOR_MAGNETOMETER  - uT
+  // - VECTOR_GYROSCOPE     - rad/s
+  // - VECTOR_EULER         - degrees
+  // - VECTOR_LINEARACCEL   - m/s^2
+  // - VECTOR_GRAVITY       - m/s^2
+imu::Vector<3> gyro = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+
+fd.gx = gyro.x();
+fd.gy = gyro.y();
+fd.gz = gyro.z();
+
+float deltaAccel = (millis() - fd.Pgt) / 1000.0f;
+if (deltaAccel > 0.0f) {
+  fd.ax = (fd.gx - fd.Pgx) / deltaAccel;   // angular accel (rad/s^2)
+  fd.ay = (fd.gy - fd.Pgy) / deltaAccel;
+  fd.az = (fd.gz - fd.Pgz) / deltaAccel;
+}
+
+fd.Pgx = fd.gx;
+fd.Pgy = fd.gy;
+fd.Pgz = fd.gz;
+fd.Pgt = millis();
 
 // Battery
-int rawSensorValue = analogRead(fd.batteryPin);
-float ADCVoltage = ((rawSensorValue / fd.ADC_RESOLUTION_CV) * fd.ADC_REF);
-fd.battery_Voltage = ADCVoltage * ((fd.R1 + fd.R2) / fd.R2);
+fd.rawSensorValue = analogRead(fd.batteryPin);
+fd.VoltageInput = ((fd.rawSensorValue / fd.ADC_RESOLUTION_CV) * fd.ADC_REF);
+fd.battery_Voltage = fd.VoltageInput * 3;
 
+// Current Sensor
+fd.Zero_Point = 0.5; //2.5 volts accoring to Pololu datasheet
+fd.CurrentSensorValue = analogRead(fd.CurrentPin);
+fd.Vpin = (fd.CurrentSensorValue / fd.ADC_RESOLUTION_CV) * 3.3;
+fd.Vout = fd.Vpin * 2.0;
+fd.current = (fd.Vout - fd.Zero_Point) / fd.Sensitivity;
+fd.current = fd.current - 0.8;
+/* Velocity
+fd.deltaAltitude = (fd.altitude - fd.prevAltitude);
+fd.deltaAltTime = (0.01);
 
-// GPS
-// Continually makes sure data is freshhh
-gps->update();
-// Read that fresh data
-data = gps->getData();
-// Only if we have a fix, take in that data
-if (data.gpgga_data.valid == 1) {
-  // get latitude, is in this format: dddmm.mmmm
-  float rawLat = data.gpgga_data.xyz.lat;
-  int latDeg = rawLat / 100;
-  float latMin = rawLat - (latDeg * 100);
-  float latitude = latDeg + (latMin / 60.0);
-  // to check for south
-  if (data.gpgga_data.xyz.ns == 'S') {
-    latitude = -latitude;
-  }
-  // get longitude
-  float rawLon = data.gpgga_data.xyz.lon;
-  int lonDeg = rawLon / 100;
-  float lonMin = rawLon - (lonDeg * 100);
-  float longitude = lonDeg + (lonMin / 60.0);
-  // to check for west
-  if (data.gpgga_data.xyz.ew == 'W') {
-    longitude = -longitude;
-  }
-  // GPS altitude
-  float gpsAltitude = data.gpgga_data.xyz.alt;
-  // GPS satellites
-  int gpsSats = data.gpgga_data.sats;
-  // Mission Time
-  int gpsHH = data.gpgga_data.utc.hh;
-  int gpsMM = data.gpgga_data.utc.mm;
-  int gpsSS = data.gpgga_data.utc.ss;
-
-  // assign everything to their telemetry spot:
-  fd.gps_altitude = gpsAltitude;
-  fd.gps_latitude = latDeg;
-  fd.gps_longitude = lonDeg;
-  fd.gps_satellites = gpsSats;
-  fd.hh = gpsHH;
-  fd.mm = gpsMM;
-  fd.ss = gpsSS;
-  // assign the latitude and longitude spots for the autonomous controls
-  fd.gps_Lat = latitude;
-  fd.gps_Long = longitude;
+fd.rawVelocity = (fd.deltaAltitude / fd.deltaAltTime);
+if(fd.rawVelocity > 500 || fd.rawVelocity < -500) {
+} else{
+  fd.velocity = fd.rawVelocity;
 }
 
+if(abs(fd.altitude - fd.prevAltitude) > 0.80){
+  fd.prevAltitude = fd.altitude;
+}
+*/
+
+
 //      ----Mode Determiner Code----
-if(fd.simulationEnable && fd.simulationActivate) {
+if((fd.simulationMode) && (!fd.simulationDisable)) {
   fd.determinedMode = false;
 } else {
   fd.determinedMode = true;
 }
 fd.mode = fd.determinedMode ? "F" : "S";
 
+//      ----UTC Time----
+if (fd.missionTimeBool){
+
+  fd.Thour = fd.GPS_Hour - 5;
+  fd.Tminute = fd.GPS_Minutes;
+  fd.Tsecond = fd.GPS_Seconds;
+}
 
 }
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           =================================== GPS Data ===================================
 void newGPSData(FlightData &fd){
+
+if(myGNSS.getPVT() && (myGNSS.getInvalidLlh() == false)){
+  fd.New_Lat = (myGNSS.getLatitude() / (pow(10,7)));
+  fd.New_Long = (myGNSS.getLongitude() / (pow(10,7)));
+  fd.GPS_Altitude = myGNSS.getAltitude();
+  fd.GPS_Hour = myGNSS.getHour();
+  fd.GPS_Minutes = myGNSS.getMinute();
+  fd.GPS_Seconds = myGNSS.getSecond();
+  fd.GPS_Satellites = myGNSS.getSIV();
+
+  fd.C_Lat = fd.New_Lat;
+  fd.C_Long = fd.New_Long;
+
+  if(millis() - fd.lastPrevUpdate >= fd.prevInterval ) {
+    fd.P_Lat = fd.C_Lat;
+    fd.P_Long = fd.C_Long;
+    fd.lastPrevUpdate = millis();
+    }
+
+  // Distance using Haversine Formula
+  fd.latTarget = fd.T_Lat * (PI / 180);
+  fd.longTarget = fd.T_Long * (PI / 180);
+  fd.latCurrent = fd.New_Lat * (PI / 180);
+  fd.longCurrent = fd.New_Long * (PI / 180);
+  fd.deltaLat = fd.latTarget - fd.latCurrent;
+  fd.deltaLong = fd.longTarget - fd.longCurrent;
+
+  fd.a = sin(fd.deltaLat / 2)*(sin(fd.deltaLat / 2)) + cos(fd.latCurrent)*cos(fd.latTarget)*(sin(fd.deltaLong / 2)*(sin(fd.deltaLong / 2)));
+  fd.c = 2 * atan2(sqrt(fd.a),sqrt(1-fd.a));
+  fd.Distance = fd.R * fd.c;
+  
+
+  }
 
 
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  APOGEE DETECTION  ===================================
-void apogeeDetection(FlightData &fd){
-  if(!fd.apogeeDetected){
-    // read new altitude
-    float newAltitude = fd.altitude;
-    // store in buffer
-    fd.altitudeSamples[fd.altIndex] = newAltitude;
-    fd.altIndex = (fd.altIndex + 1) % fd.ALT_BUFF;
-    // Increment sample count until buffer is full
-    if (fd.sampleCount < fd.ALT_BUFF) fd.sampleCount++;
-    // only check for apogee if the buffer is full
-    if (fd.sampleCount < fd.ALT_BUFF) return;
-    // get recent and past readings
-    float secondPast = fd.altitudeSamples[(fd.altIndex + fd.ALT_BUFF - 3) % fd.ALT_BUFF] ;
-    float firstPast = fd.altitudeSamples[(fd.altIndex + fd.ALT_BUFF - 2) % fd.ALT_BUFF];
-    float avgPast = (firstPast + secondPast) / (2);
-    float recent = fd.altitudeSamples[(fd.altIndex + fd.ALT_BUFF - 1) % fd.ALT_BUFF];
-    // check if we are descending
-    if ((avgPast - recent) > 1 || ((((avgPast - recent) / avgPast) * 100) > 0.1)) {
-      fd.apogeeDetected = true;
-      fd.apogeeHeight = recent;
-      }
-    }
+void saveToSDCARD(FlightData &fd) {
+
+  dataFile = SD.open("Vortex_SD_CARD.txt", FILE_WRITE);
+  dataFile.print(fd.teamID); dataFile.print(",");
+  dataFile.print(fd.Thour, 2); dataFile.print(":");
+  dataFile.print(fd.Tminute, 2); dataFile.print(":");
+  dataFile.print(fd.Tsecond, 2); dataFile.print(",");
+  dataFile.print(fd.packetCount); dataFile.print(",");
+  dataFile.print(fd.mode); dataFile.print(",");
+  dataFile.print(stateNames[flightState]); dataFile.print(",");
+  dataFile.print(fd.altitude, 2); dataFile.print(",");
+  dataFile.print(fd.temperature, 1); dataFile.print(",");
+  dataFile.print(fd.pressurePA, 1); dataFile.print(",");
+  dataFile.print(fd.battery_Voltage, 2); dataFile.print(",");
+  dataFile.print(fd.current, 3 ); dataFile.print(",");
+  dataFile.print(fd.gx, 1); dataFile.print(",");
+  dataFile.print(fd.gy, 1); dataFile.print(",");
+  dataFile.print(fd.gz, 1); dataFile.print(",");
+  dataFile.print(fd.ax, 2); dataFile.print(",");
+  dataFile.print(fd.ay, 2); dataFile.print(",");
+  dataFile.print(fd.az, 2); dataFile.print(",");
+  dataFile.print(fd.GPS_Hour); dataFile.print(":");
+  dataFile.print(fd.GPS_Minutes); dataFile.print(":");
+  dataFile.print(fd.GPS_Seconds); dataFile.print(",");
+  dataFile.print(fd.GPS_Altitude); dataFile.print(",");
+  dataFile.print(fd.New_Lat, 5); dataFile.print(",");
+  dataFile.print(fd.New_Long , 5); dataFile.print(",");
+  dataFile.print(fd.GPS_Satellites); dataFile.print(",");
+  dataFile.print(fd.apogeeHeight); dataFile.print(",");
+  dataFile.print(fd.basePressurePA); dataFile.print(",");
+  dataFile.println(fd.cmd_echo);
+  dataFile.flush();
+  dataFile.close();
+
+
+  // Processor Restart
+  countState = SD.open("flightStateTest.txt", FILE_WRITE);
+  if (countState) {
+    countState.seek(0);
+    countState.print(stateNames[flightState]);
+    countState.truncate(String(stateNames[flightState]).length());
+    countState.close();
+  }
+
+  resetBool = SD.open("resetBool.txt", FILE_WRITE);
+  if (resetBool) {
+    resetBool.seek(0);
+    resetBool.print(fd.resetOn);
+    resetBool.close();
+  }
+
+  countFile = SD.open("PacketNum.txt", FILE_WRITE);
+  if (countFile) {
+    countFile.seek(0);
+    countFile.print(fd.packetCount);
+    countFile.truncate(String(fd.packetCount).length());
+    countFile.close();
+  }
+
+
+
+
 }
+
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  ALTITUDE CALIBRATION  ===================================
 void altitudeCalibration(FlightData &fd) {
@@ -415,9 +679,15 @@ void altitudeCalibration(FlightData &fd) {
 //      --------- Base Pressure Calibration ---------
   fd.startTime = millis();
 
-  while(fd.samplesTaken < 12) {
+  while(fd.samplesTaken < 6) {
     if ((millis() - fd.startTime) >= 80) {
-      fd.tempPressurePA = bmp.pressure;
+      if(fd.simulationMode){
+        fd.tempPressurePA = fd.simulationPressure;
+      } else {
+        bmp.performReading();
+        fd.tempPressurePA = bmp.pressure;
+      }
+
       if (fd.tempPressurePA >= 95000.0 && fd.tempPressurePA <= 105000.0 ) {
         fd.sum += fd.tempPressurePA;
         fd.validCount++;
@@ -433,105 +703,405 @@ void altitudeCalibration(FlightData &fd) {
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  FLIGHT STATE  ===================================
-void UpdateFlightState(FlightData &fd) {
-  switch(flightState) {
-  case LAUNCHPAD:
-    if (fd.altitude > 10 ) {
-      flightState = ASCENT;
+void UpdateFlightState(void *arg) {
+  FlightData &fd = *(FlightData*)arg;
+
+
+while(1){
+    switch(flightState) {
+    case LAUNCH_PAD:
+      if (fd.altitude > 20.00 ) {
+        flightState = ASCENT;
+        digitalWrite(fd.TopCamera, HIGH);
+        digitalWrite(fd.BottomCamera, HIGH);
+      }
+      break;
+    case ASCENT:
+      if (fd.altitude < fd.prevApogeeAlt + 0.2){
+        fd.ApogeeCounter++;
+        if (fd.ApogeeCounter == 1) {
+          fd.apogeeHeight = fd.altitude;
+        } else if(fd.ApogeeCounter >= 10){
+          flightState = APOGEE;
+        }
+      } else {
+        fd.ApogeeCounter = 0;
+      }
+      fd.prevApogeeAlt = fd.altitude;
+      break;
+    case APOGEE:
+      if (fd.altitude < fd.apogeeHeight){
+        flightState = DESCENT;
+      }
+      break;
+    case DESCENT:
+      if (fd.altitude <= (fd.apogeeHeight * 0.80)){
+        flightState = PROBE_RELEASE;
+        digitalWrite(fd.TopSMosfet, HIGH);
+        threads.delay(300);
+        TopS.write(41);
+        threads.delay(300);
+        digitalWrite(fd.TopSMosfet, LOW);
+      }
+      break;
+    case PROBE_RELEASE:
+
+        digitalWrite(fd.RightSMosfet, HIGH);
+        digitalWrite(fd.LeftSMosfet, HIGH);
+
+      if (fd.altitude <= 11){
+        flightState = PAYLOAD_RELEASE;
+        digitalWrite(fd.BottomSMosfet, HIGH);
+        delay(300);
+        BottomS.write(0);
+        threads.delay(600);
+        digitalWrite(fd.BottomSMosfet, LOW);
+        threads.delay(200);
+      }
+      break;
+    case PAYLOAD_RELEASE:
+
+      if ((fd.altitude > -5) && (fd.altitude < 5)){
+        flightState = LANDED;
+
+
+      }
+      break;
+    case LANDED:
+
+      break;
     }
-    break;
-  case ASCENT: 
-      if (fd.apogeeDetected) {
-        flightState = APOGEE;
-        Serial.print(fd.apogeeHeight);
-    } else if (fd.velocity > -0.5 && fd.velocity < 0.5 && fd.altitude > 500) {
-        flightState = APOGEE;
-      } 
-    break;
-  case APOGEE:
-    if (fd.altitude < (fd.apogeeHeight + 0.2)){
-      flightState = DESCENT;
-    }
-    break;
-  case DESCENT:
-    if (fd.altitude <= (fd.apogeeHeight * 0.80)){
-      flightState = PROBE_RELEASE;
-      fd.deployParaglider = true;
-    }
-    break;
-  case PROBE_RELEASE:
-    if (fd.altitude <= 3.5){
-      flightState = PAYLOAD_RELEASE;
-      fd.eggDrop = true;
-    }
-    break;
-  case PAYLOAD_RELEASE:
-    if ((fd.altitude > -1 && fd.altitude < 1) || (fd.velocity > -1 && fd.velocity < 1)){
-      flightState = LANDED;
-    }
-    break;
-  case LANDED:
-    break;
+
+  threads.yield();
   }
-  
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  Command Checker Function  ===================================
 
 void commandChecker(FlightData &fd){
 
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    fd.cmd_echo = cmd;
+  bool gotCommand = false;
 
-    if (cmd == "CMD,1093,CX,ON") {
+  if (Serial1.available()) {
+    fd.cmd = Serial1.readStringUntil('\n');
+    fd.cmd.trim();
+    fd.cmd_echo = fd.cmd;
+    gotCommand = true;
+
+  } else if (Serial.available()) {
+    fd.cmd = Serial.readStringUntil('\n');
+    fd.cmd.trim();
+    fd.cmd_echo = fd.cmd;
+    gotCommand = true;
+
+  }
+
+  if(!gotCommand){
+    return;
+  }
+
+    if (fd.cmd == "CMD,1093,CX,ON") {
       fd.telemetryStatus = true;
-    } else if (cmd == "CMD,1093,CX,OFF") {
+    } else if (fd.cmd == "CMD,1093,CX,OFF") {
       fd.telemetryStatus = false;
-    } else if (cmd == "CMD,1093,ST") {
+
+    } else if (fd.cmd == "CMD,1093,ST") {
       fd.missionTimeBool = true;
-    } else if (cmd == "CMD,1093,SIM,ENABLE") {
+
+    } else if (fd.cmd == "CMD,1093,SIM,ENABLE") {
       fd.simulationEnable = true;
       fd.simulationDisable = false;
-    } else if (cmd == "CMD,1093,SIM,ACTIVATE" && fd.simulationEnable) {
+      
+    } else if (fd.cmd == "CMD,1093,SIM,ACTIVATE") {
       fd.simulationActivate = true;
-    } else if (cmd == "CMD,1093,SIM,DISABLE") {
+      fd.simulationPressure = 101325.0;
+      fd.basePressurePA = 101325.0;
+
+    } else if (fd.cmd == "CMD,1093,SIM,DISABLE") {
       fd.simulationDisable = true;
       fd.simulationActivate = false;
       fd.simulationEnable = false;
-    } else if (cmd == "CMD,1093,CAL") {
+      fd.simulationMode = false;
+      fd.basePressureBool = true;
+
+    } else if (fd.cmd == "CMD,1093,CAL") {
       fd.altitudeCommand = true;
-    } else if (cmd == "CMD,1093,MEC,DEPLOY") {
-      fd.deployParaglider = true;
-    } else if (cmd == "CMD,1093,MEC,MANUAL") {
-      fd.manualParaglider = true;
-    } else if (cmd == "CMD,1093,MEC,EGGDROP") {
-      fd.eggDrop = true;
-    } else if (cmd == "CMD,1093,EEPROM,ENABLE") {
-      fd.eepromMode = true;
-    } else if (cmd == "CMD,1093,EEPROM,DISABLE") {
-      fd.eepromMode = false;
-    } else if (cmd == "CMD,1093,EEPROM,WIPE") {
-      fd.eepromWipe = true;
-    } else if (fd.simulationEnable && fd.simulationActivate) {
-      if (cmd.startsWith("CMD,1093,SIMP")) {
-        int lastComma = cmd.lastIndexOf(",");
-        if (lastComma != -1) {
-          String pressure_Pa = cmd.substring(lastComma + 1);
-          fd.simulationPressure = pressure_Pa.toFloat();
-        }
+      fd.samplesTaken = 0;
+      fd.sum = 0;
+      fd.validCount = 0;
+
+    } else if (fd.cmd == "CMD,1093,SD,ON"){
+      fd.resetOn = true;
+
+    } else if (fd.cmd == "CMD,1093,SD,OFF") {
+      fd.resetOn = false;
+
+  
+  
+    }else if (fd.cmd == "CMD,1093,MEC,PROBE,UNLOCK") {
+      digitalWrite(fd.TopSMosfet, HIGH);
+      delay(300);
+      TopS.write(41);
+      delay(300);
+      digitalWrite(fd.TopSMosfet, LOW);
+
+    } else if (fd.cmd == "CMD,1093,MEC,PROBE,LOCK") {
+      digitalWrite(fd.TopSMosfet, HIGH);
+      delay(300);
+      TopS.write(29);
+      delay(2000);
+      digitalWrite(fd.TopSMosfet, LOW);
+
+    } else if (fd.cmd == "CMD,1093,MEC,EGG,UNLOCK") {
+      digitalWrite(fd.BottomSMosfet, HIGH);
+      delay(300);
+      BottomS.write(0);
+      delay(300);
+      digitalWrite(fd.BottomSMosfet, LOW);
+    
+    } else if (fd.cmd == "CMD,1093,MEC,EGG,LOCK") {
+      digitalWrite(fd.BottomSMosfet, HIGH);
+      delay(300);
+      BottomS.write(180);
+      delay(300);
+      digitalWrite(fd.BottomSMosfet, LOW);
+
+    } else if (fd.cmd == "CMD,1093,MEC,ACS,LEFT") {
+      digitalWrite(fd.LeftSMosfet, HIGH);
+      delay(300);
+      fd.ServosAreAvailable = false;
+      LeftS.write(180);
+      delay(1000);
+      LeftS.write(0);
+      delay(1005);
+      LeftS.write(90);
+      delay(300);
+      digitalWrite(fd.LeftSMosfet, LOW);
+      fd.ServosAreAvailable = true;
+
+    } else if (fd.cmd == "CMD,1093,MEC,ACS,RIGHT") {
+      digitalWrite(fd.RightSMosfet, HIGH);
+      delay(300);
+      fd.ServosAreAvailable = false;
+      RightS.write(0);
+      delay(1000);
+      RightS.write(180);
+      delay(1031);
+      RightS.write(90);
+      delay(300);
+      digitalWrite(fd.RightSMosfet, LOW);
+      fd.ServosAreAvailable = true;
+
+    }
+
+     fd.simulationMode = fd.simulationEnable && fd.simulationActivate && !fd.simulationDisable;
+
+    if(fd.cmd.startsWith("CMD,1093,SIMP,")){
+      if (fd.simulationMode){
+        fd.simulationPressure = fd.cmd.substring(fd.cmd.lastIndexOf(",") + 1).toFloat();
       }
-    }  
-  }
-
-
-
+    }
 
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                           ===================================  SERVO FUNCTION THREAD  ===================================
+void ServoFunction(void *arg) {
+  FlightData &fd = *(FlightData*)arg;
+
+while(1){
+  if(fd.ACS_ServoDeterminer == 4 && fd.ServosAreAvailable) {
+
+    fd.ServosAreAvailable = false;
+    RightS.write(0);
+    threads.delay(1000);
+    RightS.write(180);
+    threads.delay(1031);
+    RightS.write(90);
+    fd.ServosAreAvailable = true;
+    fd.ACS_ServoDeterminer = 0;
+
+  }
+  if(fd.ACS_ServoDeterminer == 5 && fd.ServosAreAvailable) {
+
+    fd.ServosAreAvailable = false;
+    RightS.write(0);
+    threads.delay(2000);
+    RightS.write(180);
+    threads.delay(2062);
+    RightS.write(90);
+    fd.ServosAreAvailable = true;
+    fd.ACS_ServoDeterminer = 0; 
+
+  }
+  /*if(fd.ACS_ServoDeterminer == 6 && fd.ServosAreAvailable) {
+    fd.ServosAreAvailable = false;
+    RightS.write(0);
+    threads.delay(3000);
+    RightS.write(180);
+    threads.delay(3093);
+    RightS.write(90);
+    fd.ServosAreAvailable = true;
+    fd.ACS_ServoDeterminer = 0;
+  }*/
+  if(fd.ACS_ServoDeterminer == 1  && fd.ServosAreAvailable) {
+
+    fd.ServosAreAvailable = false;
+    LeftS.write(180);
+    threads.delay(1000);
+    LeftS.write(0);
+    threads.delay(1005);
+    LeftS.write(90);
+    fd.ServosAreAvailable = true;
+    fd.ACS_ServoDeterminer = 0;
+
+  }
+  if(fd.ACS_ServoDeterminer == 2 && fd.ServosAreAvailable) {
+
+    fd.ServosAreAvailable = false;
+    LeftS.write(180);
+    threads.delay(2000);
+    LeftS.write(0);
+    threads.delay(2010);
+    LeftS.write(90);
+    fd.ServosAreAvailable = true;
+    fd.ACS_ServoDeterminer = 0;
+
+  }
+  /*if(fd.ACS_ServoDeterminer == 3 && fd.ServosAreAvailable) {
+    fd.ServosAreAvailable = false;
+    LeftS.write(180);
+    threads.delay(3000);
+    LeftS.write(0);
+    threads.delay(3015);
+    LeftS.write(90);
+    fd.ServosAreAvailable = true;
+    fd.ACS_ServoDeterminer = 0;
+  }*/
+
+  if(flightState == LANDED){
+      threads.delay(7000);
+      digitalWrite(fd.TopCamera, LOW);
+      digitalWrite(fd.BottomCamera, LOW);
+  }
+
+  threads.yield();
+  }
+}
+
+
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                           ===================================  AUTONOMOUS CONTROLS  ===================================
 void autonomousControls(FlightData &fd) {
+
+//Begin Assigning GPS variables
+
+// Target GPS Cords
+fd.A = fd.T_Lat;
+fd.B = fd.T_Long;
+
+// Current GPS Cords
+fd.C = fd.C_Lat;
+fd.D = fd.C_Long;
+
+// Previous GPS Cords
+fd.E = fd.P_Lat;
+fd.F = fd.P_Long;
+
+// Make my atan2 values
+fd.X1 = (fd.A - fd.C);
+fd.Y1 = (fd.B - fd.D)*(cos((fd.A + fd.C)/2));
+fd.X2 = (fd.C - fd.E);
+fd.Y2 = (fd.D - fd.F)*(cos((fd.D + fd.F)/2));
+
+fd.Target_Bearing = atan2(fd.Y1,fd.X1);
+fd.Current_Bearing = atan2(fd.Y2, fd.X2);
+
+
+
+// Change the outputs to degrees
+fd.TB_Degree = fd.Target_Bearing * (180 / PI);
+fd.CB_Degree = fd.Current_Bearing * (180 / PI);
+
+// Wrap the degree to be from 0-360. 0 (North), 90 (East), 180 (South), 270 (West)
+if (fd.TB_Degree < 0) {
+  fd.TB_Degree += 360;
+}
+
+if (fd.CB_Degree < 0) {
+  fd.CB_Degree += 360;
+}
+
+// Both of these should be somewhere between 0 and 360. If we subtract this is our error.
+
+fd.error = (fd.TB_Degree - fd.CB_Degree);
+// Wrap the error from -180 to 180 to take the quickest route when it comes to fixing our direction
+if (fd.error > 180){
+  fd.error -= 360;
+} else if (fd.error <= -180){
+  fd.error += 360;
+}
+
+/*if (fd.error > 0){
+  Serial.print("Use Left Servo");
+}
+if (fd.error < 0){
+  Serial.print("Use Right Servo");
+}
+*/
+if((millis() - fd.PIDTimer) > fd.PIDInterval){
+  fd.dt = (millis() - fd.PIDTimer) / 1000.f;
+  fd.PIDTimer = millis();
+
+  fd.dError = fd.error - fd.prevError;
+  fd.prevError = fd.error;
+
+  fd.Proportional = fd.error;
+  fd.Derivative = fd.dError / fd.dt;
+  fd.PIDOutput = (fd.Proportional * fd.Pgain) + (fd.Derivative * fd.Dgain);
+}
+
+
+if(fd.error > 0){
+  if(fd.PIDOutput > 0 && fd.PIDOutput <= 90) {
+    fd.ACS_ServoDeterminer = 1;
+  } else if(fd.PIDOutput > 90 && fd.PIDOutput <= 180) {
+    fd.ACS_ServoDeterminer = 2;
+ // } else if(fd.PIDOutput > 120 && fd.PIDOutput <= 180) {
+ //   fd.ACS_ServoDeterminer = 3;
+  } else if(fd.PIDOutput < 0 && fd.PIDOutput >= -90) {
+    fd.ACS_ServoDeterminer = 4;
+  } else if(fd.PIDOutput < -90 && fd.PIDOutput >= -180 ) {
+    fd.ACS_ServoDeterminer = 5;
+  //} else if(fd.PIDOutput < -120 && fd.PIDOutput >= -180 ) {
+  //  fd.ACS_ServoDeterminer = 6;
+  }
+}
+if(fd.error < 0){
+    if(fd.PIDOutput > 0 && fd.PIDOutput <= 90) {
+    fd.ACS_ServoDeterminer = 4;
+  } else if(fd.PIDOutput > 90 && fd.PIDOutput <= 180) {
+    fd.ACS_ServoDeterminer = 5;
+ // } else if(fd.PIDOutput > 120 && fd.PIDOutput <= 180) {
+  //  fd.ACS_ServoDeterminer = 6;
+  } else if(fd.PIDOutput < 0 && fd.PIDOutput >= -90) {
+    fd.ACS_ServoDeterminer = 1;
+  } else if(fd.PIDOutput < -90 && fd.PIDOutput >= -180 ) {
+    fd.ACS_ServoDeterminer = 2;
+ // } else if(fd.PIDOutput < -120 && fd.PIDOutput >= -180 ) {
+ //   fd.ACS_ServoDeterminer = 3;
+  }
+}
+
+
+
+
+
+
+
+
+
 
 
 }
@@ -541,44 +1111,73 @@ void autonomousControls(FlightData &fd) {
 
 void sendTelemetry(FlightData &fd) {
 
-  Serial.print(fd.teamID); Serial.print(",");
-  if (fd.missionTimeBool) {
-    Serial.print(fd.hh); Serial.print(":");
-    Serial.print(fd.mm); Serial.print(":");
-    Serial.print(fd.ss); Serial.print(",");
+  Serial1.print(fd.teamID); Serial1.print(",");
+  Serial1.print(fd.Thour); Serial1.print(":");
+  Serial1.print(fd.Tminute); Serial1.print(":");
+  Serial1.print(fd.Tsecond); Serial1.print(",");
+  Serial1.print(fd.packetCount); Serial1.print(",");
+  Serial1.print(fd.mode); Serial1.print(",");
+  Serial1.print(stateNames[flightState]); Serial1.print(",");
+  Serial1.print(fd.altitude, 2); Serial1.print(",");
+  Serial1.print(fd.temperature, 1); Serial1.print(",");
+  if(!fd.simulationMode){
+  Serial1.print(fd.pressurePA, 1); Serial1.print(",");
   } else {
-    Serial.print("00"); Serial.print(":");
-    Serial.print("00"); Serial.print(":");
-    Serial.print("00"); Serial.print(",");
+  Serial1.print(fd.simulationPressure, 1); Serial1.print(",");
   }
-  Serial.print(fd.packetCount); Serial.print(",");
-  Serial.print(fd.mode); Serial.print(",");
-  Serial.print(stateNames[flightState]); Serial.print(",");
-  Serial.print(fd.altitude, 2); Serial.print(",");
-  Serial.print(fd.temperature, 1); Serial.print(",");
-  Serial.print(fd.pressure_Pa / 1000, 1); Serial.print(",");
-  Serial.print(fd.battery_Voltage, 2); Serial.print(",");
-  Serial.print(fd.current, 2); Serial.print(",");
-  Serial.print(fd.gyro_NowRoll, 1); Serial.print(",");
-  Serial.print(fd.gyro_NowPitch, 1); Serial.print(",");
-  Serial.print(fd.gyro_NowYaw, 1); Serial.print(",");
-  Serial.print(fd.acceleration_roll, 2); Serial.print(",");
-  Serial.print(fd.acceleration_pitch, 2); Serial.print(",");
-  Serial.print(fd.acceleration_yaw, 2); Serial.print(",");
-  Serial.print(fd.hh); Serial.print(":");
-  Serial.print(fd.mm); Serial.print(":");
-  Serial.print(fd.ss); Serial.print(",");
-  Serial.print(fd.gps_altitude); Serial.print(",");
-  Serial.print(fd.gps_latitude, 5); Serial.print(",");
-  Serial.print(fd.gps_longitude, 5); Serial.print(",");
-  Serial.print(fd.gps_satellites); Serial.print(",");
-  Serial.print(fd.cmd_echo); Serial.print(",,");
-  if(!fd.simulationDisable) {
+  Serial1.print(fd.battery_Voltage, 2); Serial1.print(",");
+  Serial1.print(fd.current, 2); Serial1.print(",");
+  Serial1.print(fd.gx, 1); Serial1.print(",");
+  Serial1.print(fd.gy, 1); Serial1.print(",");
+  Serial1.print(fd.gz, 1); Serial1.print(",");
+  Serial1.print(fd.ax, 2); Serial1.print(",");
+  Serial1.print(fd.ay, 2); Serial1.print(",");
+  Serial1.print(fd.az, 2); Serial1.print(",");
+  Serial1.print(fd.GPS_Hour); Serial1.print(":");
+  Serial1.print(fd.GPS_Minutes); Serial1.print(":");
+  Serial1.print(fd.GPS_Seconds); Serial1.print(",");
+  Serial1.print(fd.GPS_Altitude); Serial1.print(",");
+  Serial1.print(fd.New_Lat, 5); Serial1.print(",");
+  Serial1.print(fd.New_Long , 5); Serial1.print(",");
+  Serial1.print(fd.GPS_Satellites); Serial1.print(",");
+  Serial1.println(fd.cmd_echo); 
+  
+  //Serial.print(",,");
+ /* if(!fd.simulationDisable) {
     Serial.print(fd.simulationPressure); Serial.print(",");
   } else {
     fd.simulationPressure = 0;
     Serial.print(fd.simulationPressure); Serial.print(",");
   }
-  Serial.print(fd.velocity); Serial.println();
+  */
+  //Serial.print(fd.velocity); Serial.println();
+
+  Serial.print(fd.teamID); Serial.print(",");
+  Serial.print(fd.Thour); Serial.print(":");
+  Serial.print(fd.Tminute); Serial.print(":");
+  Serial.print(fd.Tsecond); Serial.print(",");
+  Serial.print(fd.packetCount); Serial.print(",");
+  Serial.print(fd.mode); Serial.print(",");
+  Serial.print(stateNames[flightState]); Serial.print(",");
+  Serial.print(fd.altitude, 2); Serial.print(",");
+  Serial.print(fd.temperature, 1); Serial.print(",");
+  Serial.print(fd.pressurePA, 1); Serial.print(",");
+  Serial.print(fd.battery_Voltage, 2); Serial.print(",");
+  Serial.print(fd.current, 2); Serial.print(",");
+  Serial.print(fd.gx, 1); Serial.print(",");
+  Serial.print(fd.gy, 1); Serial.print(",");
+  Serial.print(fd.gz, 1); Serial.print(",");
+  Serial.print(fd.ax, 2); Serial.print(",");
+  Serial.print(fd.ay, 2); Serial.print(",");
+  Serial.print(fd.az, 2); Serial.print(",");
+  Serial.print(fd.GPS_Hour); Serial.print(":");
+  Serial.print(fd.GPS_Minutes); Serial.print(":");
+  Serial.print(fd.GPS_Seconds); Serial.print(",");
+  Serial.print(fd.GPS_Altitude); Serial.print(",");
+  Serial.print(fd.New_Lat, 5); Serial.print(",");
+  Serial.print(fd.New_Long , 5); Serial.print(",");
+  Serial.print(fd.GPS_Satellites); Serial.print(",");
+  Serial.print(fd.velocity); Serial.print(",");
+  Serial.println(fd.cmd_echo);
 }
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
