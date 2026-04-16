@@ -436,7 +436,6 @@ void setup() {
 //                                              ===================================  VOID LOOP  ===================================
 void loop() {
 
-  // Chirp
 
 
   commandChecker(fd);
