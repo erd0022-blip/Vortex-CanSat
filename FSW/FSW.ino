@@ -148,11 +148,12 @@ int direction;
 float servoOutput;
 float ACS_Time = 0;
 float ACS_Interval = 500;
+String ServoWay = "Nothing";
 
 double A;
 double B;
-double T_Lat = 34.72152;
-double T_Long = -86.63714;
+double T_Lat = 34.68184;
+double T_Long = -86.59074;
 double C;
 double D;
 double C_Lat;
@@ -180,7 +181,7 @@ float dError;
 float prevError = 0;
 
 unsigned long lastPrevUpdate = 0;
-unsigned long prevInterval = 1500; // 1 second
+unsigned long prevInterval = 1000; // 1 second
 
 float Proportional;
 float Derivative;
@@ -334,7 +335,7 @@ void setup() {
   BottomS.attach(9); // J10 // Mosfet Pin: 39
   LeftS.attach(3); // J8 // Mosfet Pin: 21
   RightS.attach(6); // J9 // Mosfet Pin: 41
-  delay(200);
+  delay(100);
 
   pinMode(fd.BottomSMosfet,OUTPUT);
   pinMode(fd.TopSMosfet,OUTPUT);
@@ -404,15 +405,16 @@ void setup() {
   //Top
   digitalWrite(fd.TopSMosfet, HIGH);
   delay(500);
-  TopS.write(41);
+  TopS.write(15);
   delay(500);
-  TopS.write(29);
+  TopS.write(30);
   delay(500);
+  digitalWrite(fd.TopSMosfet, LOW);
   delay(300);
   //Bottom
   digitalWrite(fd.BottomSMosfet, HIGH);
   delay(300);
-  BottomS.write(180);
+  BottomS.write(140);
   delay(300);
   digitalWrite(fd.BottomSMosfet, LOW);
   delay(200);
@@ -558,9 +560,9 @@ fd.mode = fd.determinedMode ? "F" : "S";
 //      ----UTC Time----
 if (fd.missionTimeBool){
 
-  fd.Thour = fd.GPS_Hour - 5;
-  fd.Tminute = fd.GPS_Minutes;
-  fd.Tsecond = fd.GPS_Seconds;
+  fd.Thour =  myGNSS.getHour() - 5;
+  fd.Tminute = myGNSS.getMinute();
+  fd.Tsecond = myGNSS.getSecond();
 }
 
 }
@@ -578,14 +580,15 @@ if(myGNSS.getPVT() && (myGNSS.getInvalidLlh() == false)){
   fd.GPS_Seconds = myGNSS.getSecond();
   fd.GPS_Satellites = myGNSS.getSIV();
 
-  fd.C_Lat = fd.New_Lat;
-  fd.C_Long = fd.New_Long;
-
   if(millis() - fd.lastPrevUpdate >= fd.prevInterval ) {
     fd.P_Lat = fd.C_Lat;
     fd.P_Long = fd.C_Long;
     fd.lastPrevUpdate = millis();
     }
+
+  fd.C_Lat = fd.New_Lat;
+  fd.C_Long = fd.New_Long;
+
 
   // Distance using Haversine Formula
   fd.latTarget = fd.T_Lat * (PI / 180);
@@ -634,8 +637,11 @@ void saveToSDCARD(FlightData &fd) {
   dataFile.print(fd.New_Lat, 5); dataFile.print(",");
   dataFile.print(fd.New_Long , 5); dataFile.print(",");
   dataFile.print(fd.GPS_Satellites); dataFile.print(",");
-  dataFile.print(fd.apogeeHeight); dataFile.print(",");
-  dataFile.print(fd.basePressurePA); dataFile.print(",");
+  dataFile.print(fd.apogeeHeight, 2); dataFile.print(",");
+  dataFile.print(fd.basePressurePA, 2); dataFile.print(",");
+  dataFile.print(fd.Distance, 3); dataFile.print(",");
+  dataFile.print(fd.P_Lat, 5); dataFile.print(",");
+  dataFile.print(fd.P_Long, 5); dataFile.print(",");
   dataFile.println(fd.cmd_echo);
   dataFile.flush();
   dataFile.close();
@@ -657,11 +663,9 @@ void saveToSDCARD(FlightData &fd) {
     resetBool.close();
   }
 
-  countFile = SD.open("PacketNum.txt", FILE_WRITE);
+  countFile = SD.open("ACS.txt", FILE_WRITE);
   if (countFile) {
-    countFile.seek(0);
-    countFile.print(fd.packetCount);
-    countFile.truncate(String(fd.packetCount).length());
+    countFile.print(millis()); countFile.print(" || "); countFile.print(fd.error); countFile.print(" || "); countFile.println(fd.ServoWay);
     countFile.close();
   }
 
@@ -711,8 +715,8 @@ while(1){
     case LAUNCH_PAD:
       if (fd.altitude > 20.00 ) {
         flightState = ASCENT;
-        digitalWrite(fd.TopCamera, HIGH);
-        digitalWrite(fd.BottomCamera, HIGH);
+        digitalWrite(fd.TopCamera, LOW);
+        digitalWrite(fd.BottomCamera, LOW);
       }
       break;
     case ASCENT:
@@ -738,7 +742,7 @@ while(1){
         flightState = PROBE_RELEASE;
         digitalWrite(fd.TopSMosfet, HIGH);
         threads.delay(300);
-        TopS.write(41);
+        TopS.write(15);
         threads.delay(300);
         digitalWrite(fd.TopSMosfet, LOW);
       }
@@ -751,16 +755,18 @@ while(1){
       if (fd.altitude <= 11){
         flightState = PAYLOAD_RELEASE;
         digitalWrite(fd.BottomSMosfet, HIGH);
-        delay(300);
-        BottomS.write(0);
-        threads.delay(600);
+        delay(200);
+        BottomS.write(60);
+        threads.delay(400);
         digitalWrite(fd.BottomSMosfet, LOW);
         threads.delay(200);
+        digitalWrite(fd.RightSMosfet, LOW);
+        digitalWrite(fd.LeftSMosfet, LOW);
       }
       break;
     case PAYLOAD_RELEASE:
 
-      if ((fd.altitude > -5) && (fd.altitude < 5)){
+      if ((fd.altitude > -10) && (fd.altitude < 8)){
         flightState = LANDED;
 
 
@@ -835,33 +841,33 @@ void commandChecker(FlightData &fd){
     } else if (fd.cmd == "CMD,1093,SD,OFF") {
       fd.resetOn = false;
 
-  
+  //--------Mechanism Actuation Commands---------
   
     }else if (fd.cmd == "CMD,1093,MEC,PROBE,UNLOCK") {
       digitalWrite(fd.TopSMosfet, HIGH);
       delay(300);
-      TopS.write(41);
+      TopS.write(15);
       delay(300);
       digitalWrite(fd.TopSMosfet, LOW);
 
     } else if (fd.cmd == "CMD,1093,MEC,PROBE,LOCK") {
       digitalWrite(fd.TopSMosfet, HIGH);
       delay(300);
-      TopS.write(29);
+      TopS.write(30);
       delay(2000);
       digitalWrite(fd.TopSMosfet, LOW);
 
     } else if (fd.cmd == "CMD,1093,MEC,EGG,UNLOCK") {
       digitalWrite(fd.BottomSMosfet, HIGH);
       delay(300);
-      BottomS.write(0);
+      BottomS.write(60);
       delay(300);
       digitalWrite(fd.BottomSMosfet, LOW);
     
     } else if (fd.cmd == "CMD,1093,MEC,EGG,LOCK") {
       digitalWrite(fd.BottomSMosfet, HIGH);
       delay(300);
-      BottomS.write(180);
+      BottomS.write(140);
       delay(300);
       digitalWrite(fd.BottomSMosfet, LOW);
 
@@ -869,12 +875,8 @@ void commandChecker(FlightData &fd){
       digitalWrite(fd.LeftSMosfet, HIGH);
       delay(300);
       fd.ServosAreAvailable = false;
-      LeftS.write(180);
-      delay(1000);
       LeftS.write(0);
-      delay(1005);
-      LeftS.write(90);
-      delay(300);
+      delay(500);
       digitalWrite(fd.LeftSMosfet, LOW);
       fd.ServosAreAvailable = true;
 
@@ -882,12 +884,8 @@ void commandChecker(FlightData &fd){
       digitalWrite(fd.RightSMosfet, HIGH);
       delay(300);
       fd.ServosAreAvailable = false;
-      RightS.write(0);
-      delay(1000);
       RightS.write(180);
-      delay(1031);
-      RightS.write(90);
-      delay(300);
+      delay(500);
       digitalWrite(fd.RightSMosfet, LOW);
       fd.ServosAreAvailable = true;
 
@@ -912,11 +910,10 @@ while(1){
   if(fd.ACS_ServoDeterminer == 4 && fd.ServosAreAvailable) {
 
     fd.ServosAreAvailable = false;
+    fd.ServoWay = "Turn Right";
     RightS.write(0);
-    threads.delay(1000);
+    threads.delay(800);
     RightS.write(180);
-    threads.delay(1031);
-    RightS.write(90);
     fd.ServosAreAvailable = true;
     fd.ACS_ServoDeterminer = 0;
 
@@ -924,11 +921,10 @@ while(1){
   if(fd.ACS_ServoDeterminer == 5 && fd.ServosAreAvailable) {
 
     fd.ServosAreAvailable = false;
+    fd.ServoWay = "Turn Right";
     RightS.write(0);
-    threads.delay(2000);
+    threads.delay(800);
     RightS.write(180);
-    threads.delay(2062);
-    RightS.write(90);
     fd.ServosAreAvailable = true;
     fd.ACS_ServoDeterminer = 0; 
 
@@ -946,11 +942,10 @@ while(1){
   if(fd.ACS_ServoDeterminer == 1  && fd.ServosAreAvailable) {
 
     fd.ServosAreAvailable = false;
+    fd.ServoWay = "Turn Left";
     LeftS.write(180);
-    threads.delay(1000);
+    threads.delay(800);
     LeftS.write(0);
-    threads.delay(1005);
-    LeftS.write(90);
     fd.ServosAreAvailable = true;
     fd.ACS_ServoDeterminer = 0;
 
@@ -958,11 +953,10 @@ while(1){
   if(fd.ACS_ServoDeterminer == 2 && fd.ServosAreAvailable) {
 
     fd.ServosAreAvailable = false;
+    fd.ServoWay = "Turn Left";
     LeftS.write(180);
-    threads.delay(2000);
+    threads.delay(800);
     LeftS.write(0);
-    threads.delay(2010);
-    LeftS.write(90);
     fd.ServosAreAvailable = true;
     fd.ACS_ServoDeterminer = 0;
 
@@ -979,7 +973,7 @@ while(1){
   }*/
 
   if(flightState == LANDED){
-      threads.delay(7000);
+      threads.delay(1000);
       digitalWrite(fd.TopCamera, LOW);
       digitalWrite(fd.BottomCamera, LOW);
   }
@@ -1049,6 +1043,8 @@ if (fd.error < 0){
   Serial.print("Use Right Servo");
 }
 */
+fd.ServoWay = "Nothing";
+
 if((millis() - fd.PIDTimer) > fd.PIDInterval){
   fd.dt = (millis() - fd.PIDTimer) / 1000.f;
   fd.PIDTimer = millis();
@@ -1059,7 +1055,7 @@ if((millis() - fd.PIDTimer) > fd.PIDInterval){
   fd.Proportional = fd.error;
   fd.Derivative = fd.dError / fd.dt;
   fd.PIDOutput = (fd.Proportional * fd.Pgain) + (fd.Derivative * fd.Dgain);
-}
+
 
 
 if(fd.error > 0){
@@ -1091,6 +1087,7 @@ if(fd.error < 0){
  // } else if(fd.PIDOutput < -120 && fd.PIDOutput >= -180 ) {
  //   fd.ACS_ServoDeterminer = 3;
   }
+}
 }
 
 
@@ -1179,4 +1176,4 @@ void sendTelemetry(FlightData &fd) {
   Serial.print(fd.velocity); Serial.print(",");
   Serial.println(fd.cmd_echo);
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
