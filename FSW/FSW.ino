@@ -106,6 +106,11 @@ bool eggDrop = false;
 String cmd_echo = "CMD_ECHO";
 bool basePressureBool = true;
 String cmd;
+bool probeUnlock = false;
+bool probeLock = false;
+bool eggUnlock = false;
+bool eggLock = false;
+bool RightServoBool = false;
 
 //                    -------- Simulation --------
 bool sim = true;
@@ -282,7 +287,7 @@ void altitudeCalibration(FlightData &fd);
 void newGPSData(FlightData &fd);
 void apogeeDetection(FlightData &fd);
 void saveToSDCARD(FlightData &fd);
-void ServoFunction(void *arg);
+void AsynchronousThread(void *arg);
 
 //           ---- Struct Variable ----
 FlightData fd;
@@ -580,7 +585,7 @@ if(flightState == LAUNCH_PAD){
   
   
   // Thread Function for Servo Autonomous
-  threads.addThread(ServoFunction, &fd);
+  threads.addThread(AsynchronousThread, &fd);
 
   // Calibrate Base Pressure: used to calculate altitude
 //  if (flightState == LAUNCH_PAD){
@@ -1125,7 +1130,7 @@ void commandChecker(FlightData &fd){
 //                                                        |///////////////////////////////////////////////////////////////////////////|
 //                                                        |     ===================== Asynchronous THREAD ======================      |
 //                                                        |///////////////////////////////////////////////////////////////////////////|
-void ServoFunction(void *arg) {
+void AsynchronousThread(void *arg) {
   FlightData &fd = *(FlightData*)arg;
 
 while(1){
