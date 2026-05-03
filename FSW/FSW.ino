@@ -21,257 +21,251 @@
 //                                                        |///////////////////////////////////////////////////////////////////////////|
 struct FlightData {
 
-//                    -------- GYROSCOPE --------
-double gx = 67;
-double gy = 67;
-double gz = 67;
+//      |========================|
+//      |COMMAND CHECKER Section |
+//      |========================|
+// * Toggles telemetry (on / off)
+bool telemetryStatus = false;
+// * (1 of 2) requirements to engage simulation mode
+bool simulationEnable = false;
+// * (2 of 2) requirements to engage simulation mode
+bool simulationActivate = false;
+// * Used to determine the mode (flight / simulation)
+bool simulationMode = false;
+// * To disengage from simulation mode
+bool simulationDisable = true;
+// * To calibrate the altitude back to 0.0
+bool altitudeCommand = true;
+// * To set UTC time
+bool missionTimeBool = false;
+// * To release CanSat from container
+bool probeUnlock = false;
+// * To lock CanSat into container
+bool probeLock = false;
+// * To release nosecone (egg) from CanSat
+bool eggUnlock = false;
+// * To lock nosecone (egg) with CanSat
+bool eggLock = false;
+// * To actuate the right servo
+bool RightServoBool = false;
+// * To actuate the left servo
+bool LeftServoBool = false;
+// * To toggle reading from the SD Card
+bool resetRead = false;
+// * To toggle writing to the SD Card
+bool resetWrite = true;
+// * Variable assigned to incoming commands
+String cmd;
+
+// ===========|
+// Simulation |
+// ===========|
+//* To assign variables upon entering simulation mode
+bool sim = true;
+// * To assign the basePressurePA to the first pressure value received
+bool baseWait = true;
+// * To change states per new pressure value received
+bool simState = false;
+// * simulated pressure value received
+float simulationPressure = 101325.0;
+
+//      |====================|
+//      |SAMPLE DATA Section |
+//      |====================|
+// * Gyroscope variables (rad/s)
+float gx = 0.0;
+float gy = 0.0;
+float gz = 0.0;
+// * Previous Gyroscope values
 float Pgx = 0.0;
 float Pgy = 0.0;
 float Pgz = 0.0;
+// * Gyroscope Timer
 float Pgt = 0;
-float Ngt = millis();
-double ox;
-double oy;
-double oz;
-
-//                    -------- ACCELERATION OF GYRO --------
-double ax;
-double ay;
-double az;
-//                    -------- GPS VARIABLES --------
-double New_Lat;
-double New_Long;
-double GPS_Altitude;
-int GPS_Hour = 0;
-int GPS_Minutes = 0;
-int GPS_Seconds = 0;
-int GPS_Satellites;
-
-//                    -------- MODE --------
+// * Acceleration variables (rad/s^2)
+float ax;
+float ay;
+float az;
+// * Altitude value from pressure formula
+float altitude;
+// * Temperature value
+float temperature; 
+// * Pressure value
+float pressurePA;
+// * Mode (flight or simulation)
 bool determinedMode = true;
 String mode;
-bool cameraBool = true;
-//                    -------- TIMERS --------
-unsigned long missionTime;
-unsigned long telemetryTime = 0;
-const unsigned long telemetryInterval = 180;
-unsigned long sdCardTime = 0;
-int sdCardTimeInterval;
-unsigned long currentTime;
-float deltaTime;
-unsigned long lastTime;
-float PIDTimer;
-float PIDInterval = 500;
-float dt;
-
+// * To assign gps time to mission time, time variables
 int Thour;
 int Tminute;
 int Tsecond;
-
-//                    -------- TELEMETRY --------
-int packetCount = 0;
-
-
-//                    -------- BATTERY --------
+// * variables used to measure remaining battery voltage
 float battery_Voltage;
-float current;
-float R1;
-float R2;
+float rawSensorValue;
 float ADC_REF = 5.0;
 int ADC_RESOLUTION_CV = 4095;
 int batteryPin = 14;
-float rawSensorValue;
 float VoltageInput;
+// * variables used to measure the current
+float current;
 float Zero_Point;
 float CurrentSensorValue;
 float Vpin;
 float Vout;
 float CurrentPin = 15;
-float VoltageReading;
-float Sensitivity = 0.185; //185 mV / A
+float Sensitivity = 0.185; // 185 mV / A
 
 
-//                    -------- COMMANDS --------
-bool telemetryStatus = false;
-bool simulationEnable = false;
-bool simulationActivate = false;
-bool simulationMode = false;
-bool simulationDisable = true;
-bool altitudeCommand = true;
-bool eepromMode = false;
-bool eepromWipe = false;
-bool missionTimeBool = false;
-bool deployParaglider = false;
-bool eggDrop = false;
-String cmd_echo = "CMD_ECHO";
-bool basePressureBool = true;
-String cmd;
-bool probeUnlock = false;
-bool probeLock = false;
-bool eggUnlock = false;
-bool eggLock = false;
-bool RightServoBool = false;
+//      |=================|
+//      |GPS DATA Section |
+//      |=================|
+// * New Latitude && Longitude
+double New_Lat;
+double New_Long;
+// * GPS UTC Internal Clock
+int GPS_Hour = 0;
+int GPS_Minutes = 0;
+int GPS_Seconds = 0;
+// * GPS Altitude
+float GPS_Altitude;
+// * Satellites
+int GPS_Satellites;
 
-//                    -------- Simulation --------
-bool sim = true;
-bool baseWait = true;
-bool simState = false;
-float simulationPressure = 101325.0;
+// =========|
+// Distance |
+// =========|
+// * Target Cords
+double latTarget;
+double longTarget;
+// * Current Cords
+double latCurrent;
+double longCurrent;
+// * Delta distance
+double deltaLat;
+double deltaLong;
+// * Variables for Distance formula equation
+double a;
+double c;
+// * Radius of earth in meters
+double R = 6371000;
+// * Distance value
+double Distance;
 
 
-//                    -------- Altitude --------
-float altitude;
-float altitudeRaw;
-float altitudeFiltered;
-float altitudeFilt;
-float alpha = 0.06;
-float deltaAltitude;
-float lastAltitude;
-//                    -------- Velocity --------
-float velocity;
-float prevAltitude = 0;
-double deltaAltTime;
-double AltTimeNow;
-float rawVelocity;
-
-//                    -------- MISC --------
-float temperature; 
-float pressurePA;
-int teamID = 1093;
-double stateSwitch = 0.0;
-
-//                    -------- APOGEE DETECTION FUNCTION --------
-// -------- APOGEE DETECTION FUNCTION --------
-bool AltWait = false;
-float secondAltitude = 0;
-float thirdAltitude = 0;
+//      |=====================|
+//      |FLIGHT STATE Section |
+//      |=====================|
+// * Set value once altitude drops (after ascending)
 float apogeeHeight = 0;
-int fallingCount = 0;
-float maxAltitude = 0;
-bool apogeeArmed = false;
+// * Counter for each altitude below the previous
+int ApogeeCounter = 0;
+// * Value to hold previous altitude for comparison
+float prevApogeeAlt = 0;
+// * To actuate top servo to release CanSat from container after entering Descent
+bool descentToProbe = false;
+// * To actuate bottom servo to release nosecone from CanSat after entering Payload_Release
+bool probeToPayload = false;
 
-//                    -------- BASE PRESSURE CALIBRATION --------
+//      |============================|
+//      |ASYNCHRONOUS THREAD Section |
+//      |============================|
+// * To handle camera (on / off) toggling
+bool cameraBool = true;
+
+//      |================|
+//      |SD CARD Section |
+//      |================|
+// * Timer variables for how often data is saved
+unsigned long SDCARDTimer = 0.0;
+unsigned long SDCARDInterval = 250.0;
+
+//      |==================|
+//      |TELEMETRY Section |
+//      |==================|
+// * Timer variables for how often telemetry is sent
+unsigned long telemetryTime = 0;
+const unsigned long telemetryInterval = 1000;
+// * Number of packets sent
+int packetCount = 0;
+// * CanSat team Vortext assigned Team ID
+int teamID = 1093;
+// * To display the last sent command
+String cmd_echo = "CMD_ECHO";
+
+//      |=============================|
+//      |ALTITUDE CALIBRATION Section |
+//      |=============================|
+// * Timer per pressure sample taken
 unsigned long startTime;
+// * Counter of pressure samples taken
 int samplesTaken = 0;
+// * summation of all pressure values sampled
 float sum = 0;
+// * number of samples taken
 int validCount = 0;
+// * temporary variable to check the pressure value is a valid number
 float tempPressurePA;
+// * The average pressure sampled, then used to calculate altitude
 float basePressurePA;
-//                    -------- AUTONOMOUS --------
-int direction;
-float servoOutput;
-float ACS_Time = 0;
-float ACS_Interval = 500;
-String ServoWay = "Nothing";
-bool LeftServoBool = false;
-float ServoOutputFinal;
 
-double A;
-double B;
+//      |============================|
+//      |AUTONOMOUS CONTROLS Section |
+//      |============================|
+// * Target Cordinates
 double T_Lat = 34.72278900;
 double T_Long = -86.63696330;
-double C;
-double D;
-double C_Lat;
-double C_Long;
-double E;
-double F;
-double P_Lat;
-double P_Long;
-double X1;
-double Y1;
-double X2;
-double Y2;
-
-double Target_Bearing;
-double Current_Bearing;
-
-double TB_Degree;
-double CB_Degree;
-double error;
-
-volatile int ACS_ServoDeterminer = 0;
-volatile bool ServosAreAvailable = true;
-
-float dError;
-float prevError = 0;
-
-unsigned long lastPrevUpdate = 0;
-unsigned long prevInterval = 1000; // 1 second
-
-float Proportional;
-float Derivative;
-float PIDOutput;
-float Pgain = 1;
-float Dgain = 0.4;
-
-long cLat;
-long cLong;
 long tLat;
 long tLong;
+// * Current Cords, assigned by New_Lat / New_Long
+double C_Lat;
+double C_Long;
+long cLat;
+long cLong;
+// * Previous current cords
+double P_Lat;
+double P_Long;
 long pLat;
 long pLong;
+
+// * All Target / Current / Previous degree cords turned into radians before trig is used
 long cLatRad;
 long cLongRad;
 long tLatRad;
 long tLongRad;
 long pLatRad;
 long pLongRad;
+// * Delta's made for the atan2 function (to form bearings / vectors)
 long deltaTLat;
 long deltaTLong;
 long deltaCLat;
 long deltaCLong;
+// * Directional bearings
 long TargetBearing;
 long CurrentBearing;
+
+// * The difference in angle made from the two dierctional bearings
+double error;
+
+// * degree variables used for servo actuation
 float RightTurn;
 float LeftTurn;
+// * Timer for servos, giving them time between each actuation
 unsigned long ServoTimer = 0;
 float ServoInterval = 1000;
+// * Variable to not use servos after a processor restart has occured
+bool Wait = false;
 
-
-
-
-//                    -------- MosFets --------
+//      |======================|
+//      |MISCELLANEOUS Section |
+//      |======================|
+// * All Servo Mosfets
 int TopSMosfet = 27;
 int BottomSMosfet = 39;
 int RightSMosfet = 41;
 int LeftSMosfet = 21;
-
-//                    -------- SD Card --------
-unsigned long SDCARDTimer = 0;
-unsigned long SDCARDInterval = 250;
-
-//                    -------- Camera MosFets --------
+// * Camera Mosfets
 int TopCamera = 31;
 int BottomCamera = 30;
-
-
-
-//                    -------- Apogee --------
-unsigned long AscentTimer = 0;
-int ApogeeCounter = 0;
-float prevApogeeAlt = 0;
-
-//                    -------- Distance --------
-double latTarget;
-double longTarget;
-double latCurrent;
-double longCurrent;
-double deltaLat;
-double deltaLong;
-double a;
-double c;
-double R = 6371000;
-double Distance;
-
-//                    -------- Processor Restart --------
-bool resetRead = false;
-bool resetWrite = true;
-bool Wait = false;
-
-//                    -------- Flight States --------
-bool descentToProbe = false;
-bool probeToPayload = false;
 
 };
 //                                                        |///////////////////////////////////////////////////////////////////////////|
@@ -285,7 +279,6 @@ void UpdateFlightState(FlightData &fd);
 void autonomousControls(FlightData &fd);
 void altitudeCalibration(FlightData &fd);
 void newGPSData(FlightData &fd);
-void apogeeDetection(FlightData &fd);
 void saveToSDCARD(FlightData &fd);
 void AsynchronousThread(void *arg);
 
@@ -587,11 +580,6 @@ if(flightState == LAUNCH_PAD){
   // Thread Function for Servo Autonomous
   threads.addThread(AsynchronousThread, &fd);
 
-  // Calibrate Base Pressure: used to calculate altitude
-//  if (flightState == LAUNCH_PAD){
-//    altitudeCalibration(fd);
-//  }
-
   if ((fd.resetRead) && (fd.simulationMode)){
     fd.simulationEnable = true;
     fd.simulationActivate = true;
@@ -706,21 +694,6 @@ fd.Vpin = (fd.CurrentSensorValue / fd.ADC_RESOLUTION_CV) * 3.3;
 fd.Vout = fd.Vpin * 2.0;
 fd.current = (fd.Vout - fd.Zero_Point) / fd.Sensitivity;
 fd.current = fd.current - 0.8;
-/* Velocity
-fd.deltaAltitude = (fd.altitude - fd.prevAltitude);
-fd.deltaAltTime = (0.01);
-
-fd.rawVelocity = (fd.deltaAltitude / fd.deltaAltTime);
-if(fd.rawVelocity > 500 || fd.rawVelocity < -500) {
-} else{
-  fd.velocity = fd.rawVelocity;
-}
-
-if(abs(fd.altitude - fd.prevAltitude) > 0.80){
-  fd.prevAltitude = fd.altitude;
-}
-*/
-
 
 //      ----Mode Determiner Code----
 if(fd.simulationMode) {
@@ -1025,7 +998,7 @@ void commandChecker(FlightData &fd){
       fd.simulationActivate = false;
       fd.simulationEnable = false;
       fd.simulationMode = false;
-      fd.basePressureBool = true;
+
 
     } else if (fd.cmd == "CMD,1093,CAL") {
       fd.altitudeCommand = true;
@@ -1189,9 +1162,12 @@ while(1){
       fd.eggLock = false;
   }
   if(flightState == LANDED){
+    if(fd.cameraBool){
       threads.delay(1000);
       digitalWrite(fd.TopCamera, LOW);
       digitalWrite(fd.BottomCamera, LOW);
+      fd.cameraBool = false;
+    }
   }
   if(fd.LeftServoBool){
     digitalWrite(fd.LeftSMosfet, HIGH);
@@ -1361,6 +1337,5 @@ void sendTelemetry(FlightData &fd) {
   Serial.print(fd.New_Lat, 5); Serial.print(",");
   Serial.print(fd.New_Long , 5); Serial.print(",");
   Serial.print(fd.GPS_Satellites); Serial.print(",");
-  Serial.print(fd.velocity); Serial.print(",");
   Serial.println(fd.cmd_echo);
 }
