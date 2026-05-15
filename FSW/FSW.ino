@@ -177,7 +177,7 @@ bool cameraBool = true;
 //      |================|
 // * Timer variables for how often data is saved
 unsigned long SDCARDTimer = 0.0;
-unsigned long SDCARDInterval = 250.0;
+unsigned long SDCARDInterval = 100.0;
 
 //      |==================|
 //      |TELEMETRY Section |
@@ -212,8 +212,8 @@ float basePressurePA;
 //      |AUTONOMOUS CONTROLS Section |
 //      |============================|
 // * Target Cordinates
-double T_Lat = 34.72278900;
-double T_Long = -86.63696330;
+double T_Lat = 34.72216;
+double T_Long = -86.63768;
 long tLat;
 long tLong;
 // * Current Cords, assigned by New_Lat / New_Long
@@ -258,7 +258,7 @@ bool Wait = false;
 //      |======================|
 //      |MISCELLANEOUS Section |
 //      |======================|
-// * All Servo Mosfets
+// * Servo Mosfets
 int TopSMosfet = 27;
 int BottomSMosfet = 39;
 int RightSMosfet = 41;
@@ -271,7 +271,9 @@ int BottomCamera = 30;
 //                                                        |///////////////////////////////////////////////////////////////////////////|
 //                                                        |      ===================== Global Variables ======================        |
 //                                                        |///////////////////////////////////////////////////////////////////////////|
-//    ----- Function Declarations ----
+// =====================|
+// Function Declaration |
+// =====================|
 void commandChecker(FlightData &fd);
 void sendTelemetry(FlightData &fd);
 void sampleData(FlightData &fd);
@@ -282,9 +284,14 @@ void newGPSData(FlightData &fd);
 void saveToSDCARD(FlightData &fd);
 void AsynchronousThread(void *arg);
 
-//           ---- Struct Variable ----
+// ================|
+// Struct Variable |
+// ================|
 FlightData fd;
-//      ------ STATE MACHINE FUNCTION ------
+
+// ========================|
+// State Machine Variables |
+// ========================|
 enum FlightState { 
   LAUNCH_PAD, 
   ASCENT, 
@@ -295,6 +302,10 @@ enum FlightState {
   LANDED 
   };
 
+// =============|
+// String Array |
+// =============|
+// * When printing the flightState, the enum position corresponds to the string flightState position (statenames[flightState])
 const char* stateNames[7] = {
   "LAUNCH_PAD", 
   "ASCENT", 
@@ -304,21 +315,25 @@ const char* stateNames[7] = {
   "PAYLOAD_RELEASE", 
   "LANDED"
   };
+  // * Variable flightState is of the type FlightState (enum value)
  FlightState flightState = LAUNCH_PAD;
 
-//      ------ Sensor Inits ------
-// Pressure, Temp
+// ======================|
+// Sensor Initialization |
+// ======================|
+// * Pressure && Temp
 Adafruit_BMP3XX bmp;
-
 /* Set the delay between fresh samples */
 uint16_t BNO055_SAMPLERATE_DELAY_MS = 100;
-// Check I2C device address and correct line below (by default address is 0x29 or 0x28)
-//id, address
+// * Check I2C device address and correct line below (by default address is 0x29 or 0x28)
+// * id, address
 Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, &Wire);
-// GPS
+// * GPS
 SFE_UBLOX_GNSS myGNSS;
 
-//                    -------- SD CARD --------
+// ========================|
+// SD File Initializations |
+// ========================|
 const int chipSelect = BUILTIN_SDCARD;
 File dataFile;
 File State;
@@ -330,13 +345,11 @@ File teleCom;
 File simMode;
 File simPressure;
 File simReboot;
-// SD Reset on/off
-String Bool;
-String nameOfState;
+// * The 'i' is used in a for-loop to cycle through enum values until previous flightState is found
 int i = 0;
 
 
-// Servos
+// * Servos
 PWMServo TopS;
 PWMServo BottomS;
 PWMServo LeftS;
@@ -356,8 +369,8 @@ void setup() {
   SD.begin(chipSelect);
   Wire.begin();
   delay(200);
-
-// *Setting the ADC to 12-bit
+  
+// * Setting the ADC to 12-bit
   analogReadResolution(12);
 
 // ===============================================|
@@ -368,42 +381,35 @@ void setup() {
   bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
   bmp.setOutputDataRate(BMP3_ODR_50_HZ);
-
-// ====|
-// GPS |
-// ====|
+// ===================|
+// GPS Initialization |
+// ===================|
   myGNSS.begin();
   myGNSS.setI2COutput(COM_TYPE_UBX);
   myGNSS.setNavigationFrequency(20);
   myGNSS.setAutoPVT(true);
-
-// ========|
-// SD Card |
-// ========|
+// =======================|
+// SD Card Initialization |
+// =======================|
   if(!SD.begin(BUILTIN_SDCARD)){
     Serial.println("SD initialization failed!");
-    return;
   }
   dataFile = SD.open("Vortex_SD_CARD.txt", FILE_WRITE);
-
-
-// ====|
-// BNO |
-// ====|
+// ===================|
+// BNO Initialization |
+// ===================|
   bno.begin();
-
-// =======|
-// Servos |
-// =======|
+// ================================|
+// Servo Teensy Pin Initialization |
+// ================================|
   TopS.attach(12); // J11 // Mosfet Pin: 27
   BottomS.attach(9); // J10 // Mosfet Pin: 39
   LeftS.attach(3); // J8 // Mosfet Pin: 21
   RightS.attach(6); // J9 // Mosfet Pin: 41
   delay(100);
-
-// ========|
-// MOSFETS |
-// ========|
+// =======================|
+// MOSFETS Initialization |
+// =======================|
   pinMode(fd.BottomSMosfet,OUTPUT);
   pinMode(fd.TopSMosfet,OUTPUT);
   pinMode(fd.RightSMosfet,OUTPUT);
@@ -417,17 +423,38 @@ void setup() {
   digitalWrite(fd.TopCamera, LOW);
   digitalWrite(fd.BottomCamera, LOW);
   delay(300);
-
 // ==================|
 // PROCESSOR RESTART |
 // ==================|
 
+// * General Idea of the Reading Process
+/*
+  - Open the file and make sure to have it on FILE_READ mode :  reset = SD.open("reset.txt", FILE_READ);
+  - Make sure the file opened : if (reset){ } ;
+  - Create a String Variable that will take in everything that is within the File : String Restart = "";
+  - Start a While Loop that will continue aslong as there are characters (Letters, numbers, etc...) : while(reset.available()) {};
+  - Add all the characters one by one to the String variable made earlier: Restart += (char)reset.read();
+      -     On the previous step, we have to cast the value that comes back from reset.read(); , 
+      -     because the values stored in the file are ASCII numbers.
+      -     Every letter and number has an ASCII number, ex: 'A' = 65, '1' = 49.
+      -     After we cast the number 49, we get the value which is what we stored originally. 
+      -     We are just converting back to letters/numbers and out of ASCII numbers.
+      -     ASCII = "American Standard Code for Information Interchange"
+  - Then we trim our String Variable to remove any junk (Whitespace, newline / \n) : Restart.trim();
+  - Then we take our frequently used FSW variable and make it equal to our String Variable 
+    after changing it to the needed type (int, float, comparrison) : fd.resetR = (Restart == "1"), fd.resetR = Restart.toInt(), fd.resetR = Restart.toFloat();
+  - Then we close the file once we are done : reset.close();
+*/
+
+// =================================|
+// To Retrieve READ & WRITE toggles |
+// =================================|
 // * For toggling if we would like to retrieve SD Card data 
 // * or not in the case of a processor restart.
 // * Usually turned off for testing purposes.
   resetReading = SD.open("resetRead.txt", FILE_READ);
   if (resetReading){
-    Bool = "";
+    String Bool = "";
     while (resetReading.available()) {
       Bool += (char)resetReading.read();
     }
@@ -445,10 +472,12 @@ void setup() {
     fd.resetWrite = (Write == "1");
     resetWriting.close();
   }
-// * To retrieve the flightState
+// ========================|
+// To Retrieve flightState |
+// ========================|
   State = SD.open("flightStateTest.txt", FILE_READ);
   if ((State) && (fd.resetRead)) {
-    nameOfState = "";
+    String nameOfState = "";
     while (State.available()) {
       nameOfState += (char)State.read();
     }
@@ -461,6 +490,7 @@ void setup() {
         break;
       }
     }
+    // * This is used to skip the next servo decision after a processor restart
     if ((flightState == DESCENT) || (flightState == PROBE_RELEASE)){
       fd.Wait = true;
     }
@@ -468,7 +498,9 @@ void setup() {
   } else {
     flightState = LAUNCH_PAD;
   }
-// * To retrieve the Packet Count
+// ========================|
+// To Retrieve packetCount |
+// ========================|
   countFile = SD.open("PacketNum.txt", FILE_READ);
   if ((countFile) && (fd.resetRead)) {
     String savedCount = "";
@@ -481,7 +513,9 @@ void setup() {
   } else {
     fd.packetCount = 0;
   }
-// * To retrieve the Base Pressure used in calculating altitude
+// ===========================|
+// To Retrieve basePressurePA |
+// ===========================|
   pressureSave = SD.open("Base.txt", FILE_READ);
   if ((pressureSave) && (fd.resetRead)) {
     String bp = "";
@@ -494,7 +528,9 @@ void setup() {
   } else {
     altitudeCalibration(fd);
   }
-// * To retrieve the CX_ON command
+// ==========================|
+// To Retrieve CX_ON Command |
+// ==========================|
   teleCom = SD.open("CX.txt", FILE_READ);
   if ((teleCom) && (fd.resetRead)) {
     String tele = "";
@@ -505,6 +541,9 @@ void setup() {
     fd.telemetryStatus = (tele == "1");
     teleCom.close();
   }
+// ============================|
+// To Retrieve Simulation Mode |
+// ============================|
   simMode = SD.open("Sim.txt", FILE_READ);
   if ((simMode) && (fd.resetRead)) {
     String simM = "";
@@ -515,6 +554,9 @@ void setup() {
     fd.simulationMode = (simM == "1");
     simMode.close();
   }
+// ============================================|
+// To Retrieve SIM boolean for Simulation Mode |
+// ============================================|
   simReboot = SD.open("simL.txt", FILE_READ);
   if ((simReboot) && (fd.resetRead)) {
     String si = "";
@@ -525,8 +567,10 @@ void setup() {
     fd.sim = (si == "1");
     fd.baseWait = (si == "1");
     simReboot.close();
-    
   }
+// ===================================|
+// To Retrieve the Simulated Pressure |
+// ===================================|
   simPressure = SD.open("simP.txt", FILE_READ);
   if ((simPressure) && (fd.resetRead)) {
     String simp = "";
@@ -539,47 +583,53 @@ void setup() {
   } else {
     fd.simulationPressure = 101325.0;
   }
-
-
-  
+// ==============================================|
+// To Initialize all Appropriate Servo Positions |
+// ==============================================|
 if(flightState == LAUNCH_PAD){
   //Top
   digitalWrite(fd.TopSMosfet, HIGH);
-  delay(500);
+  delay(100);
   TopS.write(35);
-  delay(500);
+  Serial.println("Top");
+  delay(900);
   TopS.write(21);
-  delay(500);
+  delay(900);
   digitalWrite(fd.TopSMosfet, LOW);
   delay(300);
   //Bottom
   digitalWrite(fd.BottomSMosfet, HIGH);
-  delay(300);
+  delay(100);
   BottomS.write(140);
-  delay(300);
+  Serial.println("Bottom");
+  delay(800);
   digitalWrite(fd.BottomSMosfet, LOW);
   delay(200);
   //Left
   digitalWrite(fd.LeftSMosfet, HIGH);
-  delay(300);
+  delay(100);
   LeftS.write(0);
-  delay(500);
+  Serial.println("Left");
+  delay(900);
   digitalWrite(fd.LeftSMosfet, LOW);
   delay(200);
   //Right
   digitalWrite(fd.RightSMosfet, HIGH);
-  delay(300);
+  delay(100);
   RightS.write(180);
-  delay(500);
+  Serial.println("Right");
+  delay(900);
   digitalWrite(fd.RightSMosfet, LOW);
   delay(200);
 }
-  
-  
-  
-  // Thread Function for Servo Autonomous
+// =================================|
+// To Initialize Asynchronous Thread|
+// =================================|
   threads.addThread(AsynchronousThread, &fd);
 
+// =================================|
+// To Set SIM variables After Reset |
+// =================================|
   if ((fd.resetRead) && (fd.simulationMode)){
     fd.simulationEnable = true;
     fd.simulationActivate = true;
@@ -587,26 +637,20 @@ if(flightState == LAUNCH_PAD){
 
     fd.mode = "S";
   }
-
 }
-
-
-
 //                                                        |///////////////////////////////////////////////////////////////////////////|
 //                                                        |          ===================== VOID LOOP ======================           |
 //                                                        |///////////////////////////////////////////////////////////////////////////|
 void loop() {
-
-
-
+// * First check any incoming commands.
   commandChecker(fd);
-
-if (!fd.simulationMode) {
+// * If in simulation mode, don't recalibrate. If not then run calibration once.
+  if (!fd.simulationMode) {
   altitudeCalibration(fd);
-}
-
+  }
+// * Sample all sensor data.
   sampleData(fd);
-
+// * In simulation mode, run FlightState per new simulation pressure. Otherwise run FlightState for flight mode continuously.
   if(fd.mode == "F"){
   UpdateFlightState(fd);
   } else {
@@ -615,17 +659,17 @@ if (!fd.simulationMode) {
       fd.simState = false;
     }
   }
-
+// * Sample GPS and calculate Distance formula.
   newGPSData(fd);
-
+// * With new gps data, calculate movement with servos.
   autonomousControls(fd);
-
-  if(fd.telemetryStatus && ((millis() - fd.telemetryTime) >= 1000)) {
+// * Send telemetry at 1 Hz.
+  if(fd.telemetryStatus && ((millis() - fd.telemetryTime) >= fd.telemetryInterval)) {
     sendTelemetry(fd);
     fd.telemetryTime = millis();
     fd.packetCount ++;
   }
-
+// * Save data to SD CARD at 10 Hz.
   if(((millis() - fd.SDCARDTimer) >= fd.SDCARDInterval)){
     saveToSDCARD(fd);
     fd.SDCARDTimer = millis();
@@ -636,27 +680,29 @@ if (!fd.simulationMode) {
 //                                                        |///////////////////////////////////////////////////////////////////////////|
 void sampleData(FlightData &fd) {
 
-// BMP390
-
+//  * BMP390 : pressure and temperature sampling. 
 if(fd.simulationMode){
+  bmp.performReading();
   fd.pressurePA = fd.simulationPressure;
+  fd.temperature = bmp.temperature;
 } else {
   bmp.performReading();
   fd.pressurePA = bmp.pressure;
   fd.temperature = bmp.temperature;
 }
-/*
-bmp.performReading();
-fd.temperature = bmp.temperature;
-*/
-// Altitude
+
+// * Altitude calculation, generic formula.
 if(fd.simulationMode){
   fd.altitude = 44330.0 * (1 - pow(fd.simulationPressure / fd.basePressurePA, 0.1903));
 } else {
   fd.altitude = 44330.0 * (1 - pow(fd.pressurePA / fd.basePressurePA, 0.1903));
+  if (fd.altitude > 10000){
+    fd.altitude = 0.0;
+  }
 }
 
-//BNO
+// * BNO-055 : gyroscope and acceleration
+//
 // Possible vector values can be:
   // - VECTOR_ACCELEROMETER - m/s^2
   // - VECTOR_MAGNETOMETER  - uT
@@ -744,11 +790,7 @@ if(myGNSS.getPVT() && (myGNSS.getInvalidLlh() == false)){
   fd.a = sin(fd.deltaLat / 2)*(sin(fd.deltaLat / 2)) + cos(fd.latCurrent)*cos(fd.latTarget)*(sin(fd.deltaLong / 2)*(sin(fd.deltaLong / 2)));
   fd.c = 2 * atan2(sqrt(fd.a),sqrt(1-fd.a));
   fd.Distance = fd.R * fd.c;
-  
-
   }
-
-
 }
 //                                                        |///////////////////////////////////////////////////////////////////////////|
 //                                                        |           ===================== SD CARD ======================            |
@@ -902,7 +944,7 @@ void UpdateFlightState(FlightData &fd) {
 
     switch(flightState) {
     case LAUNCH_PAD:
-      if (fd.altitude > 8.00 ) {
+      if (fd.altitude > 1.00 ) {
         flightState = ASCENT;
         digitalWrite(fd.TopCamera, HIGH);
         digitalWrite(fd.BottomCamera, HIGH);
@@ -933,7 +975,7 @@ void UpdateFlightState(FlightData &fd) {
       }
       break;
     case PROBE_RELEASE:
-      if (fd.altitude <= 10){
+      if (fd.altitude <= 5.0){
         flightState = PAYLOAD_RELEASE;
         fd.probeToPayload = true;
       }
@@ -1039,6 +1081,19 @@ void commandChecker(FlightData &fd){
         simReboot.close();
         SD.remove("simL.txt");
       }
+
+      flightState = LAUNCH_PAD;
+      fd.altitudeCommand = true;
+      fd.mode = "F";
+      fd.simulationMode = false;
+      fd.simulationEnable = false;
+      fd.simulationActivate = false;
+      fd.simulationDisable = true;
+      fd.pressurePA = 0.0;
+      fd.packetCount = 0;
+      fd.Wait = false;
+
+
       
 
     } else if (fd.cmd == "CMD,1093,SD,READ,ON"){
@@ -1111,7 +1166,7 @@ while(1){
           digitalWrite(fd.TopSMosfet, HIGH);
           threads.delay(200);
           TopS.write(35);
-          threads.delay(500);
+          threads.delay(900);
           digitalWrite(fd.TopSMosfet, LOW);
           digitalWrite(fd.RightSMosfet, HIGH);
           digitalWrite(fd.LeftSMosfet, HIGH);
@@ -1121,8 +1176,8 @@ while(1){
   if(fd.probeToPayload){
           digitalWrite(fd.BottomSMosfet, HIGH);
           threads.delay(200);
-          BottomS.write(60);
-          threads.delay(500);
+          BottomS.write(20);
+          threads.delay(1000);
           digitalWrite(fd.BottomSMosfet, LOW);
           digitalWrite(fd.RightSMosfet, LOW);
           digitalWrite(fd.LeftSMosfet, LOW);
@@ -1133,7 +1188,7 @@ while(1){
       digitalWrite(fd.TopSMosfet, HIGH);
       threads.delay(200);
       TopS.write(35);
-      threads.delay(700);
+      threads.delay(1000);
       digitalWrite(fd.TopSMosfet, LOW);
       fd.probeUnlock = false;
   }
@@ -1148,8 +1203,8 @@ while(1){
   if(fd.eggUnlock){
       digitalWrite(fd.BottomSMosfet, HIGH);
       threads.delay(300);
-      BottomS.write(60);
-      threads.delay(800);
+      BottomS.write(20);
+      threads.delay(1000);
       digitalWrite(fd.BottomSMosfet, LOW);
       fd.eggUnlock = false;
   }
