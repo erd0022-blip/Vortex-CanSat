@@ -21,7 +21,7 @@ struct FlightData {
 //      |COMMAND CHECKER Section |
 //      |========================|
 // * Toggles telemetry (on / off)
-bool telemetryStatus = true;
+bool telemetryStatus = false;
 // * (1 of 2) requirements to engage simulation mode
 bool simulationEnable = false;
 // * (2 of 2) requirements to engage simulation mode
@@ -159,7 +159,7 @@ float prevApogeeAlt = 0;
 bool descentToProbe = false;
 // * To actuate bottom servo to release nosecone from CanSat after entering Payload_Release
 bool probeToPayload = false;
-int ApogeeAmount;
+int ApogeeAmount = 10;
 bool ApogeeBool = true;
 
 //      |============================|
@@ -173,7 +173,7 @@ bool cameraBool = true;
 //      |================|
 // * Timer variables for how often data is saved
 unsigned long SDCARDTimer = 0.0;
-unsigned long SDCARDInterval = 250.0;
+unsigned long SDCARDInterval = 200.0;
 
 //      |==================|
 //      |TELEMETRY Section |
@@ -208,8 +208,8 @@ float basePressurePA = 0;
 //      |AUTONOMOUS CONTROLS Section |
 //      |============================|
 // * Target Cordinates
-double T_Lat = 34.72235;
-double T_Long = -86.63699;
+double T_Lat = 38.31015;
+double T_Long = -78.73855;
 double tLat;
 double tLong;
 // * Current Cords, assigned by New_Lat / New_Long
@@ -568,13 +568,17 @@ void setup() {
 
 
 if (flightState == LAUNCH_PAD){
-  TopS.write(34);
+  TopS.write(15);
   Serial.println(" First Initialization ");
   delay(1000);
-  TopS.write(21);
-  BottomS.write(180);
+  TopS.write(0);
+  delay(100);
+  BottomS.write(90);
+  delay(100);
   LeftS.write(0);
+  delay(100);
   RightS.write(180);
+  delay(100);
   Serial.println(" Second Initialization ");
   delay(1100);
   digitalWrite(fd.TopSMosfet, LOW);
@@ -612,7 +616,7 @@ void loop() {
 // * Sample GPS and calculate Distance formula.
   newGPSData(fd);
 // * With new gps data, calculate movement with servos.
-if (!(fd.C_Lat == fd.P_Lat)){
+if ((!(fd.C_Lat == fd.P_Lat)) && (flightState == PROBE_RELEASE)){
   autonomousControls(fd);
 }
 // * Send telemetry at 1 Hz.
@@ -683,6 +687,9 @@ void commandChecker(FlightData &fd){
       fd.samplesTaken = 0;
       fd.sum = 0;
       fd.validCount = 0;
+      fd.basePressurePA = 0;
+      altitudeCalibration(fd);
+
 
     } else if (fd.cmd == "CMD,1093,SD,RESET"){
       if(SD.exists("flightStateTest.txt")){
@@ -739,9 +746,12 @@ void commandChecker(FlightData &fd){
       digitalWrite(fd.LeftSMosfet, HIGH);
       digitalWrite(fd.RightSMosfet, HIGH);
       delay(1000);
-      TopS.write(21);
-      BottomS.write(180);
+      TopS.write(0);
+      delay(100);
+      BottomS.write(90);
+      delay(100);
       LeftS.write(0);
+      delay(100);
       RightS.write(180);
       delay(1100);
       digitalWrite(fd.TopSMosfet, LOW);
@@ -963,14 +973,14 @@ void UpdateFlightState(FlightData &fd) {
       }
       break;
     case PROBE_RELEASE:
-      if (fd.altitude <= 5.0){
+      if (fd.altitude <= 2.5){
         flightState = PAYLOAD_RELEASE;
         fd.probeToPayload = true;
       }
       break;
     case PAYLOAD_RELEASE:
 
-      if ((fd.altitude > -10) && (fd.altitude < 5)){
+      if ((fd.altitude > -10) && (fd.altitude < 2)){
         flightState = LANDED;
 
       }
@@ -1286,7 +1296,7 @@ while(1){
   if(fd.descentToProbe){
         digitalWrite(fd.TopSMosfet, HIGH);
         threads.delay(200);
-        TopS.write(35);
+        TopS.write(15);
         threads.delay(900);
         digitalWrite(fd.TopSMosfet, LOW);
         digitalWrite(fd.RightSMosfet, HIGH);
@@ -1297,7 +1307,7 @@ while(1){
   if(fd.probeToPayload){
         digitalWrite(fd.BottomSMosfet, HIGH);
         threads.delay(200);
-        BottomS.write(20);
+        BottomS.write(10);
         threads.delay(1000);
         digitalWrite(fd.BottomSMosfet, LOW);
         digitalWrite(fd.RightSMosfet, LOW);
@@ -1308,7 +1318,7 @@ while(1){
   if(fd.probeUnlock){
       digitalWrite(fd.TopSMosfet, HIGH);
       threads.delay(200);
-      TopS.write(35);
+      TopS.write(15);
       threads.delay(1000);
       digitalWrite(fd.TopSMosfet, LOW);
       fd.probeUnlock = false;
@@ -1316,7 +1326,7 @@ while(1){
   if(fd.probeLock){
       digitalWrite(fd.TopSMosfet, HIGH);
       threads.delay(200);
-      TopS.write(21);
+      TopS.write(0);
       threads.delay(2000);
       digitalWrite(fd.TopSMosfet, LOW);
       fd.probeLock = false;    
@@ -1324,7 +1334,7 @@ while(1){
   if(fd.eggUnlock){
       digitalWrite(fd.BottomSMosfet, HIGH);
       threads.delay(300);
-      BottomS.write(20);
+      BottomS.write(10);
       threads.delay(1000);
       digitalWrite(fd.BottomSMosfet, LOW);
       fd.eggUnlock = false;
@@ -1332,7 +1342,7 @@ while(1){
   if(fd.eggLock){
       digitalWrite(fd.BottomSMosfet, HIGH);
       threads.delay(300);
-      BottomS.write(140);
+      BottomS.write(90);
       threads.delay(800);
       digitalWrite(fd.BottomSMosfet, LOW);
       fd.eggLock = false;
@@ -1368,3 +1378,6 @@ while(1){
   threads.yield();
   }
 }
+
+
+
